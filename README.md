@@ -39,21 +39,33 @@ android/                  ← open this folder in Android Studio (or run gradle 
 ## Firebase setup (one time)
 
 1. Create a project at https://console.firebase.google.com → add an **Android app**
-   with package name `com.saif.mosque` (debug: `com.saif.mosque.debug`).
+   with package name `com.saif.mosque` (same for debug and release — no suffix is used).
 2. Download `google-services.json` and place it at `android/app/google-services.json`
    (git-ignored). Enable **Email/Password** sign-in in Authentication.
-3. Create a Cloud Firestore database (any region) and deploy the rules:
+3. Create a Cloud Firestore database (any region) and deploy rules + indexes:
    ```
    cd android
-   firebase deploy --only firestore:rules   # requires Firebase CLI
+   firebase deploy --only firestore:rules,firestore:indexes   # requires Firebase CLI
    ```
    (or paste `firestore.rules` into the console).
-4. Seed a platform admin manually in Firestore:
-   - Auth: create user `superadmin@demo.local` / `demo12345`
-   - Firestore: `users/{uid}` = `{ name, email, phone, role: "SUPERADMIN", mosqueId: null, active: true, createdAt }`
-5. Seed a demo mosque: `mosques/demo-mosque-0001` (active: true), its `funds` subcollection
-   with the 5 starter funds (GEN, CHD, CON, WAK, UTL), and an admin user in `users` with
-   `role: "ADMIN"`, `mosqueId: "demo-mosque-0001"` and Auth email `admin@demo.local`.
+4. Seed the demo accounts + demo mosque automatically (recommended, idempotent):
+   ```
+   cd android/scripts
+   npm install
+   node seed-demo.mjs --service-account /path/to/serviceAccountKey.json
+   ```
+   The service-account key comes from Firebase Console → Project settings →
+   Service accounts → "Generate new private key" (**never commit it** — it is git-ignored).
+   The script creates Auth users `superadmin@demo.local` and `admin@demo.local`
+   (both password `demo12345`), their `users/{uid}` profiles
+   (`role: "SUPERADMIN"` with `mosqueId: null`, and `role: "ADMIN"` with
+   `mosqueId: "demo-mosque-0001"`), the `mosques/demo-mosque-0001` doc (active: true)
+   and its 5 starter funds (GEN, CHD, CON, WAK, UTL).
+   Manual alternative: create the two Auth users in the console, then create the
+   `users/{uid}` docs and the mosque + funds docs by hand as described above.
+5. Now the demo login buttons in the app work:
+   `superadmin@demo.local / demo12345` → platform console,
+   `admin@demo.local / demo12345` → mosque dashboard.
 
 ## Build & run
 
