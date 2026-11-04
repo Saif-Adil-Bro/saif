@@ -60,7 +60,8 @@ class ReportsViewModel(
     val state: StateFlow<UiState<MonthlyReport>> =
         _state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 
-    var yearMonth by mutableStateOf(Format.currentYearMonth())
+    private val _yearMonth = MutableStateFlow(Format.currentYearMonth())
+    val yearMonth: StateFlow<Pair<Int, Int>> = _yearMonth
 
     init { load() }
 
@@ -68,7 +69,7 @@ class ReportsViewModel(
         viewModelScope.launch {
             _state.value = UiState.Loading
             try {
-                val (y, m) = yearMonth
+                val (y, m) = _yearMonth.value
                 val (start, end) = Format.yearMonthIso(y, m)
                 val contributions = repo.contributionsInRange(mosqueId, start, end)
                 val expenses = repo.expensesInRange(mosqueId, start, end)
@@ -90,14 +91,14 @@ class ReportsViewModel(
     }
 
     fun prevMonth() {
-        val d = LocalDate.of(yearMonth.first, yearMonth.second, 1).minusMonths(1)
-        yearMonth = d.year to d.monthValue
+        val d = LocalDate.of(_yearMonth.value.first, _yearMonth.value.second, 1).minusMonths(1)
+        _yearMonth.value = d.year to d.monthValue
         load()
     }
 
     fun nextMonth() {
-        val d = LocalDate.of(yearMonth.first, yearMonth.second, 1).plusMonths(1)
-        yearMonth = d.year to d.monthValue
+        val d = LocalDate.of(_yearMonth.value.first, _yearMonth.value.second, 1).plusMonths(1)
+        _yearMonth.value = d.year to d.monthValue
         load()
     }
 }
@@ -107,6 +108,8 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
     val vm: ReportsViewModel = viewModel { ReportsViewModel(container.ledgerRepository, mosqueId) }
     val context = LocalContext.current
+    val state by vm.state.collectAsStateWithLifecycle()
+    val ym by vm.yearMonth.collectAsStateWithLifecycle()
 
     // fund labels for the by-fund section
     val fundsState by container.ledgerRepository.observeFunds(mosqueId)
@@ -119,7 +122,7 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
                 IconButton(onClick = { vm.prevMonth() }) {
                     Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.prev_month))
                 }
-                Text(Format.monthLabel(context, vm.yearMonth.second, vm.yearMonth.first),
+                Text(Format.monthLabel(context, ym.second, ym.first),
                     style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 IconButton(onClick = { vm.nextMonth() }) {
                     Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
@@ -127,7 +130,7 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
             }
             Spacer(Modifier.height(12.dp))
 
-            when (val s = vm.state.value) {
+            when (val s = state) {
                 is UiState.Loading -> com.saif.mosque.ui.components.CenteredProgress()
                 is UiState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
                 is UiState.Success -> {

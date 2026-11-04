@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.saif.mosque.ui.screens
 
 import androidx.compose.foundation.clickable
