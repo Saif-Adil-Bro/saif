@@ -98,10 +98,10 @@ class MembersViewModel(
         }
     }
 
-    fun update(member: AppUser) {
+    fun update(old: AppUser, member: AppUser) {
         if (member.id == user.id && !member.active) {
             viewModelScope.launch { _messages.emit(Msg.Res(R.string.cannot_deactivate_self)) }
-        } else mutate { ledger.updateMember(mosqueId, member, user) }
+        } else mutate { ledger.updateMember(mosqueId, old, member, user) }
     }
 
     fun delete(member: AppUser) {
@@ -194,7 +194,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
                 if (target.id.isEmpty()) {
                     vm.create(name, email, phone, role, designation, password)
                 } else {
-                    vm.update(target.copy(name = name, email = email, phone = phone,
+                    vm.update(target, target.copy(name = name, email = email, phone = phone,
                         role = role, designation = designation, active = active))
                 }
                 editing = null

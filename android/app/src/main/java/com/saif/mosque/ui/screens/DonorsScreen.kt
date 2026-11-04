@@ -87,7 +87,7 @@ class DonorsViewModel(
     val messages = _messages.asSharedFlow()
 
     fun add(d: Donor) = mutate { repo.addDonor(mosqueId, d) }
-    fun update(d: Donor) = mutate { repo.updateDonor(mosqueId, d) }
+    fun update(old: Donor, d: Donor) = mutate { repo.updateDonor(mosqueId, old, d) }
     fun delete(d: Donor) = mutate { repo.deleteDonor(mosqueId, d.id) }
 
     private fun mutate(block: suspend () -> Unit) {
@@ -168,7 +168,7 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
             isNew = target.id.isEmpty(),
             onDismiss = { editing = null },
             onSave = { d ->
-                if (target.id.isEmpty()) vm.add(d) else vm.update(d.copy(id = target.id))
+                if (target.id.isEmpty()) vm.add(d) else vm.update(target, d.copy(id = target.id))
                 editing = null
             }
         )

@@ -86,7 +86,7 @@ class FundsViewModel(
     val messages = _messages.asSharedFlow()
 
     fun add(fund: Fund) = mutate { repo.addFund(mosqueId, fund) }
-    fun update(fund: Fund) = mutate { repo.updateFund(mosqueId, fund) }
+    fun update(old: Fund, fund: Fund) = mutate { repo.updateFund(mosqueId, old, fund) }
     fun delete(fund: Fund) = mutate { repo.deleteFund(mosqueId, fund.id) }
 
     private fun mutate(block: suspend () -> Unit) {
@@ -160,7 +160,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
             isNew = target.id.isEmpty(),
             onDismiss = { editing = null },
             onSave = { fund ->
-                if (target.id.isEmpty()) vm.add(fund) else vm.update(fund.copy(id = target.id))
+                if (target.id.isEmpty()) vm.add(fund) else vm.update(target, fund.copy(id = target.id))
                 editing = null
             }
         )

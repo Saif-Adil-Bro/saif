@@ -1,9 +1,10 @@
 // Run against the local Firestore emulator only; see README.md.
 // These tests define the security boundary to preserve during a Spark migration.
 import { before, beforeEach, after, test } from 'node:test';
+import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, writeBatch, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, writeBatch, increment, runTransaction } from 'firebase/firestore';
 
 let env;
 before(async () => {
@@ -208,4 +209,25 @@ test('revoked staff cannot update or delete members', async () => {
   });
   await assertFails(updateDoc(doc(secretary, 'users/member-a'), { name: 'No' }));
   await assertFails(deleteMember(secretary, 'member-a'));
+});
+
+
+test('optimistic metadata transaction detects an edit made on another device', async () => {
+  const first = dbFor('admin-a'), second = dbFor('admin-a');
+  let readComplete, release;
+  const readReady = new Promise(resolve => { readComplete = resolve; });
+  const proceed = new Promise(resolve => { release = resolve; });
+  let attempt = 0;
+  const edit = runTransaction(first, async tx => {
+    const ref = doc(first, 'mosques/a/funds/general');
+    const snap = await tx.get(ref);
+    if (snap.data().name !== 'General') throw new Error('stale metadata');
+    if (attempt++ === 0) { readComplete(); await proceed; }
+    tx.update(ref, { name: 'First device' });
+  });
+  await readReady;
+  await assertSucceeds(updateDoc(doc(second, 'mosques/a/funds/general'), { name: 'Second device' }));
+  release();
+  await assert.rejects(edit, /stale metadata/);
+  if ((await getDoc(doc(first, 'mosques/a/funds/general'))).data().name !== 'Second device') throw new Error('stale edit overwrote new data');
 });

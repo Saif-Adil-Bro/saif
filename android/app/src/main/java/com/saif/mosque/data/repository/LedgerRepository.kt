@@ -98,11 +98,16 @@ class LedgerRepository(
         "nameEn" to fund.nameEn.trim(), "description" to fund.description.trim(),
         "active" to fund.active, "balance" to 0
     ))
-    suspend fun updateFund(mosqueId: String, fund: Fund) {
-        coll(mosqueId, "funds").document(fund.id).update(mapOf(
-            "name" to fund.name.trim(), "code" to fund.code.trim(), "nameEn" to fund.nameEn.trim(),
-            "description" to fund.description.trim(), "active" to fund.active
-        )).await()
+    suspend fun updateFund(mosqueId: String, old: Fund, fund: Fund) {
+        val ref = coll(mosqueId, "funds").document(old.id)
+        db.runTransaction { tx ->
+            val current = tx.get(ref).toObject(Fund::class.java) ?: throw StaleRecordException()
+            if (!com.saif.mosque.util.MetadataVersion.sameFund(current, old)) throw StaleRecordException()
+            tx.update(ref, mapOf(
+                "name" to fund.name.trim(), "code" to fund.code.trim(), "nameEn" to fund.nameEn.trim(),
+                "description" to fund.description.trim(), "active" to fund.active
+            ))
+        }.await()
     }
     suspend fun deleteFund(mosqueId: String, fundId: String) {
         coll(mosqueId, "funds").document(fundId).update("active", false).await()
@@ -112,11 +117,16 @@ class LedgerRepository(
         "address" to donor.address.trim(), "active" to donor.active, "totalDonated" to 0,
         "createdAt" to System.currentTimeMillis()
     ))
-    suspend fun updateDonor(mosqueId: String, donor: Donor) {
-        coll(mosqueId, "donors").document(donor.id).update(mapOf(
-            "name" to donor.name.trim(), "phone" to donor.phone.trim(), "address" to donor.address.trim(),
-            "active" to donor.active
-        )).await()
+    suspend fun updateDonor(mosqueId: String, old: Donor, donor: Donor) {
+        val ref = coll(mosqueId, "donors").document(old.id)
+        db.runTransaction { tx ->
+            val current = tx.get(ref).toObject(Donor::class.java) ?: throw StaleRecordException()
+            if (!com.saif.mosque.util.MetadataVersion.sameDonor(current, old)) throw StaleRecordException()
+            tx.update(ref, mapOf(
+                "name" to donor.name.trim(), "phone" to donor.phone.trim(), "address" to donor.address.trim(),
+                "active" to donor.active
+            ))
+        }.await()
     }
     suspend fun deleteDonor(mosqueId: String, donorId: String) {
         coll(mosqueId, "donors").document(donorId).update("active", false).await()
@@ -139,13 +149,19 @@ class LedgerRepository(
     suspend fun deleteTransfer(mosqueId: String, t: Transfer) =
         mutate("transfers", "delete", mosqueId, t.id, expected = t)
 
-    suspend fun updateMember(mosqueId: String, member: AppUser, editor: AppUser) {
-        if (member.id == editor.id && !member.active) throw SelfActionException()
-        db.collection("users").document(member.id).update(mapOf(
-            "name" to member.name.trim(), "phone" to member.phone.trim(),
-            "designation" to member.designation.trim(), "role" to member.role.name,
-            "active" to member.active
-        )).await()
+    suspend fun updateMember(mosqueId: String, old: AppUser, member: AppUser, editor: AppUser) {
+        if (old.id == editor.id && !member.active) throw SelfActionException()
+        val ref = db.collection("users").document(old.id)
+        db.runTransaction { tx ->
+            val current = tx.get(ref).toObject(AppUser::class.java) ?: throw StaleRecordException()
+            if (current.mosqueId != mosqueId || !com.saif.mosque.util.MetadataVersion.sameMember(current, old))
+                throw StaleRecordException()
+            tx.update(ref, mapOf(
+                "name" to member.name.trim(), "phone" to member.phone.trim(),
+                "designation" to member.designation.trim(), "role" to member.role.name,
+                "active" to member.active
+            ))
+        }.await()
     }
     suspend fun deleteMember(mosqueId: String, memberId: String, editor: AppUser) {
         if (memberId == editor.id) throw SelfActionException()
@@ -175,6 +191,7 @@ class LedgerRepository(
 class InsufficientBalanceException : Exception("insufficient balance")
 class SameAccountException : Exception("same account")
 class SelfActionException : Exception("self action not allowed")
+class StaleRecordException : Exception("Record changed elsewhere. Refresh and try again.")
 
 /** Convert a Firestore model to the plain JSON-compatible data accepted by callable functions. */
 internal fun callableMap(value: Any): Map<*, *> {
