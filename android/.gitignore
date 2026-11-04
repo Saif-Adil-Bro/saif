@@ -10,3 +10,8 @@ local.properties
 
 # Firebase config — never commit the real one; copy from Firebase console
 app/google-services.json
+
+# Seed script deps + service-account key (NEVER commit the key)
+scripts/node_modules/
+scripts/serviceAccountKey.json
+scripts/*service-account*.json

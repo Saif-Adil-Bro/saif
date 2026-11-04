@@ -1,0 +1,13 @@
+{
+  "name": "mosque-accounts-seed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-off script to seed the demo Auth users + demo mosque into your Firebase project (so the demo login works).",
+  "scripts": {
+    "seed:demo": "node seed-demo.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}
