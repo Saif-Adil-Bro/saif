@@ -8,6 +8,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
+import android.content.Context
+import com.saif.mosque.R
+import com.saif.mosque.data.outbox.DirectoryDraft
+import com.saif.mosque.ui.components.PendingDirectory
+import org.junit.Assert.assertEquals
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -48,5 +55,19 @@ class ResponsiveComponentsTest {
         }
         compose.onNodeWithText("৳১২৩.০০").assertIsDisplayed()
         compose.onNodeWithText("৳৪৫.০০").assertIsDisplayed()
+    }
+
+    @Test fun failedPendingItemShowsReasonAndCanBeRetried() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        var retries = 0
+        val draft = DirectoryDraft("id", "u", "m", "funds", "Pending fund", "{}", 1L, "BLOCKED", "PERMISSION")
+        compose.setContent {
+            MosqueTheme { PendingDirectory(listOf(draft), online = true, onRetry = { retries++ }) }
+        }
+        compose.onNodeWithText(context.getString(R.string.pending_count, 1)).performClick()
+        compose.onNodeWithText("Pending fund").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.sync_unconfirmed)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.retry)).performClick()
+        compose.runOnIdle { assertEquals(1, retries) }
     }
 }

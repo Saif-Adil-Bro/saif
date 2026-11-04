@@ -57,9 +57,13 @@ but the wrapper script and jar are not committed. CI uses Gradle 8.10.2 and the
 raw JSON in the `GOOGLE_SERVICES_JSON` repository secret to build a debug APK.
 
 The shared components include Android Studio previews for compact phones, large text,
-and tablets. With an Android device or emulator connected, run
-`gradle connectedDebugAndroidTest` from `android/` for the responsive component tests.
-Run `gradle testDebugUnitTest` for the local offline-session policy tests.
+and tablets. The Android instrumentation suite includes local SQLite, responsive UI,
+and end-to-end queue tests against local Firebase Auth/Firestore emulators. With an
+Android emulator running, Node, JDK and Android SDK installed, and the app's Firebase
+configuration available locally, run `bash android/scripts/run-sync-emulator-tests.sh`
+from the repository root. It explicitly redirects the test clients to local emulators;
+it does not write to the production Firebase project. Run `gradle testDebugUnitTest`
+from `android/` for the local policy tests.
 Also verify the full app manually at 320 dp and tablet widths, with increased font
 size, the keyboard open, both languages, and real Firebase data.
 
@@ -148,8 +152,12 @@ replace production balances from this report.
   immutable operation receipt prevents retrying a creation as a second record.
   Pending or unconfirmed items appear separately and do not count as online data.
   The queue is excluded from backup; clearing app data or uninstalling loses
-  unsynced drafts. A different account cannot sync them. These changes have not
-  yet been validated on a real Android device. Role/active changes are observed online.
+  unsynced drafts. A different account cannot sync them. If the account is fully
+  deactivated and signed out, its drafts cannot currently be viewed until that
+  account can authenticate again; export/recovery is not implemented. Android and
+  Firebase emulator tests cover offline retry, acknowledgement recovery, concurrent
+  adds, account isolation and inactive users. Real devices and real-world connectivity
+  have not yet been validated. Role/active changes are observed online.
 - **Existing data is not automatically repaired.** Before enabling writes, back up
   and reconcile each fund balance, mosque total, donor totals and counters against
   the historical records. Prior bugs may have caused discrepancies that cannot be
