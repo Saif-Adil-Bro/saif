@@ -76,8 +76,8 @@ Ledger operations and new-account provisioning still require the deployed callab
 Cloud Function, so the app is **not yet compatible with Spark-only production deployment**.
 A safe migration
 requires client transaction changes, matching Firestore rules, and provisioning
-changes. Offline-first creation/editing and automatic synchronization also remain
-unimplemented. The emulator security baseline and migration acceptance criteria are in
+changes. Offline-first ledger creation/editing and automatic ledger synchronization
+also remain unimplemented. The emulator security baseline and migration acceptance criteria are in
 [`android/rules-tests/README.md`](android/rules-tests/README.md). Do not switch a
 production project to permissive rules as a workaround.
 
@@ -137,12 +137,19 @@ replace production balances from this report.
   mean the server committed the operation but the response was lost. Request-level
   idempotency and audit logging are not yet implemented.
 - Callable writes require an internet connection and successful Functions deployment.
-  A previously server-verified Firebase session can open cached data in read-only
-  mode while offline, only when the cached profile matches the current Firebase UID.
+  A previously server-verified Firebase session can open cached data while offline,
+  only when the cached profile matches the current Firebase UID.
   Cached data may be incomplete or stale, and a remote revocation cannot be known
   until connectivity returns. The app revalidates the session when online.
-  Offline writes, a durable queue and automatic synchronization are not implemented;
-  do not treat offline edits as saved. Role/active changes are observed online.
+  Only new fund and donor records can currently be queued offline; all other
+  offline edits remain disabled. The queue stores drafts in a local SQLite database,
+  scopes them by Firebase UID and mosque, and uses WorkManager to retry when a
+  connection returns. Server-side role and mosque status are rechecked, and an
+  immutable operation receipt prevents retrying a creation as a second record.
+  Pending or unconfirmed items appear separately and do not count as online data.
+  The queue is excluded from backup; clearing app data or uninstalling loses
+  unsynced drafts. A different account cannot sync them. These changes have not
+  yet been validated on a real Android device. Role/active changes are observed online.
 - **Existing data is not automatically repaired.** Before enabling writes, back up
   and reconcile each fund balance, mosque total, donor totals and counters against
   the historical records. Prior bugs may have caused discrepancies that cannot be

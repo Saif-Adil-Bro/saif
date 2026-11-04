@@ -228,6 +228,17 @@
     <string name="profile">Profile</string>
     <string name="you">You</string>
     <string name="admin_details">Admin details</string>
-    <string name="offline_read_only">Offline: showing cached data, which may be incomplete. Changes cannot be saved yet.</string>
+    <string name="offline_read_only">Offline: new funds and donors can be saved on this device. Other changes need a connection.</string>
     <string name="offline_login_required">Connect to the internet to verify your account before using the app.</string>
+    <string name="pending_count">Pending sync: %1$d</string>
+    <string name="pending_title">Pending sync</string>
+    <string name="pending_explanation">These items are stored on this device. They are not confirmed online or included in balances.</string>
+    <string name="sync_waiting">Waiting to sync</string>
+    <string name="sync_unconfirmed">Sync not confirmed</string>
+    <string name="sync_check_permission">Check access and connection. It may already have reached the server.</string>
+    <string name="sync_check_record">Check the online record before retrying; it may already have reached the server.</string>
+    <string name="local_pending_saved">Saved on device; waiting to sync.</string>
+    <string name="local_save_failed">Could not save on this device. Check storage and try again.</string>
+    <string name="saving">Saving…</string>
+    <string name="close">Close</string>
 </resources>

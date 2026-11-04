@@ -12,7 +12,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.saif.mosque.R
 
-/** Offline sessions are currently read-only; no writes are queued or synced. */
+/** Offline sessions may queue only new funds and donors; other writes remain disabled. */
 val LocalOfflineMode = staticCompositionLocalOf { false }
 
 @Composable

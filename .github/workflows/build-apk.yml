@@ -84,7 +84,7 @@ jobs:
         working-directory: android
         run: |
           set -o pipefail
-          if gradle --no-daemon --console=plain testDebugUnitTest assembleDebug 2>&1 | tee /tmp/build.log; then
+          if gradle --no-daemon --console=plain testDebugUnitTest assembleDebug assembleDebugAndroidTest 2>&1 | tee /tmp/build.log; then
             echo "err=" >> "$GITHUB_OUTPUT"
           else
             # capture the first compile/config error lines so they surface in the

@@ -42,8 +42,10 @@ service cloud.firestore {
       let counter = kind == 'funds' ? 'fundCount' : 'donorCount';
       return canDirectory(mosqueId, kind) && data.mosqueId == mosqueId && directoryFields(data, kind) &&
         (kind == 'funds'
-          ? data.keys().hasOnly(['mosqueId', 'name', 'code', 'nameEn', 'description', 'active', 'balance']) && data.balance == 0
-          : data.keys().hasOnly(['mosqueId', 'name', 'phone', 'address', 'active', 'totalDonated', 'createdAt']) && data.totalDonated == 0 && data.createdAt is int) &&
+          ? data.keys().hasOnly(['mosqueId', 'name', 'code', 'nameEn', 'description', 'active', 'balance', 'syncOpId', 'syncOwner']) && data.balance == 0
+          : data.keys().hasOnly(['mosqueId', 'name', 'phone', 'address', 'active', 'totalDonated', 'createdAt', 'syncOpId', 'syncOwner']) && data.totalDonated == 0 && data.createdAt is int) &&
+        (!data.keys().hasAny(['syncOpId', 'syncOwner']) ||
+          (data.syncOpId == docId && data.syncOwner == request.auth.uid)) &&
         getAfter(mosque).data.directoryOpId == docId && getAfter(mosque).data.directoryOpKind == kind &&
         getAfter(mosque).data[counter] == get(mosque).data[counter] + 1;
     }

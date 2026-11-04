@@ -14,6 +14,7 @@ import com.saif.mosque.data.repository.PlatformRepository
 class AppContainer(val context: Context) {
 
     val session = SessionManager(context)
+    val outbox = com.saif.mosque.data.outbox.DirectoryOutbox.get(context)
 
     val auth: FirebaseAuth = FirebaseAuth.getInstance()
 

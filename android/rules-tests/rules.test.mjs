@@ -231,3 +231,15 @@ test('optimistic metadata transaction detects an edit made on another device', a
   await assert.rejects(edit, /stale metadata/);
   if ((await getDoc(doc(first, 'mosques/a/funds/general'))).data().name !== 'Second device') throw new Error('stale edit overwrote new data');
 });
+
+
+test('sync markers are bound to the actor and document, and cannot be changed', async () => {
+  const db = dbFor('admin-a');
+  await assertSucceeds(createDirectory(db, 'funds', 'sync1', { ...fund(), syncOpId: 'sync1', syncOwner: 'admin-a' }));
+  await assertFails(createDirectory(db, 'funds', 'sync2', { ...fund(), syncOpId: 'sync2', syncOwner: 'admin-b' }));
+  await assertFails(createDirectory(db, 'funds', 'sync3', { ...fund(), syncOpId: 'other', syncOwner: 'admin-a' }));
+  await assertFails(createDirectory(db, 'funds', 'sync4', { ...fund(), syncOpId: 'sync4' }));
+  await assertFails(updateDoc(doc(db, 'mosques/a/funds/sync1'), { syncOwner: 'admin-b' }));
+  await assertFails(createDirectory(db, 'funds', 'sync1', { ...fund(), syncOpId: 'sync1', syncOwner: 'admin-a' }));
+  if ((await getDoc(doc(db, 'mosques/a'))).data().fundCount !== 2) throw new Error('retry altered counter');
+});

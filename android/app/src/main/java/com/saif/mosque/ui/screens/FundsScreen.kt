@@ -72,6 +72,9 @@ import kotlinx.coroutines.launch
 
 class FundsViewModel(
     private val repo: LedgerRepository,
+    private val outbox: com.saif.mosque.data.outbox.DirectoryOutbox,
+    private val auth: com.google.firebase.auth.FirebaseAuth,
+    private val context: android.content.Context,
     private val mosqueId: String,
     private val user: AppUser
 ) : ViewModel() {
@@ -85,7 +88,38 @@ class FundsViewModel(
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
 
-    fun add(fund: Fund) = mutate { repo.addFund(mosqueId, fund) }
+    var adding by mutableStateOf(false)
+        private set
+    var addError by mutableStateOf(false)
+        private set
+    val pending = outbox.observe(user.id, mosqueId, "funds")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun clearAddError() { addError = false }
+    fun add(fund: Fund, onSaved: () -> Unit) {
+        if (adding) return
+        adding = true
+        addError = false
+        viewModelScope.launch {
+            val stored = try {
+                check(auth.currentUser?.uid == user.id)
+                val draft = outbox.addFund(user.id, mosqueId, fund)
+                // Scheduling failure cannot undo the already durable draft. App startup
+                // and periodic recovery will schedule it again.
+                runCatching { com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
+                    com.saif.mosque.data.outbox.DirectorySync.scheduleRecovery(context) }
+                true
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                addError = true; false
+            } finally { adding = false }
+            if (stored) { onSaved(); _messages.emit(Msg.Res(R.string.local_pending_saved)) }
+        }
+    }
+    fun retry(draft: com.saif.mosque.data.outbox.DirectoryDraft) = viewModelScope.launch {
+        if (auth.currentUser?.uid == user.id && outbox.retry(draft.id, user.id, mosqueId)) {
+            com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
+        }
+    }
     fun update(old: Fund, fund: Fund) = mutate { repo.updateFund(mosqueId, old, fund) }
     fun delete(fund: Fund) = mutate { repo.deleteFund(mosqueId, fund.id) }
 
@@ -104,8 +138,11 @@ class FundsViewModel(
 @Composable
 fun FundsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
-    val vm: FundsViewModel = viewModel { FundsViewModel(container.ledgerRepository, mosqueId, user) }
-    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
+    val vm: FundsViewModel = viewModel { FundsViewModel(container.ledgerRepository, container.outbox, container.auth, container.context, mosqueId, user) }
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canAdd = vm.canEdit
+    val canEdit = vm.canEdit && !offline
+    val pending by vm.pending.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -125,18 +162,21 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (canEdit) FloatingActionButton(onClick = { editing = Fund() }) {
+            if (canAdd) FloatingActionButton(onClick = { vm.clearAddError(); editing = Fund() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_fund))
             }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+            com.saif.mosque.ui.components.PendingDirectory(pending, !offline) { vm.retry(it) }
+            androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
         StateBox(state) { funds ->
             if (funds.isEmpty()) {
                 EmptyBox()
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize().padding(inner).padding(16.dp),
+                    Modifier.fillMaxSize().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
@@ -152,16 +192,20 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
                 }
             }
         }
+            }
+        }
     }
 
     editing?.let { target ->
         FundFormDialog(
             initial = target,
             isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            saving = vm.adding,
+            saveError = vm.addError,
+            onDismiss = { if (!vm.adding) editing = null },
             onSave = { fund ->
-                if (target.id.isEmpty()) vm.add(fund) else vm.update(target, fund.copy(id = target.id))
-                editing = null
+                if (target.id.isEmpty()) vm.add(fund) { editing = null }
+                else { vm.update(target, fund.copy(id = target.id)); editing = null }
             }
         )
     }
@@ -181,6 +225,8 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
 private fun FundFormDialog(
     initial: Fund,
     isNew: Boolean,
+    saving: Boolean,
+    saveError: Boolean,
     onDismiss: () -> Unit,
     onSave: (Fund) -> Unit
 ) {
@@ -200,6 +246,7 @@ private fun FundFormDialog(
                 LabeledField(stringResource(R.string.fund_code), code, { code = it.uppercase() })
                 LabeledField(stringResource(R.string.fund_name_en), nameEn, { nameEn = it })
                 LabeledField(stringResource(R.string.description), description, { description = it }, singleLine = false)
+                if (saveError) Text(stringResource(R.string.local_save_failed), color = MaterialTheme.colorScheme.error)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
                     val activeLabel = stringResource(R.string.active)
@@ -209,7 +256,7 @@ private fun FundFormDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
                 if (Validators.required(name) != null || Validators.required(code) != null) {
                     error = "required"; return@TextButton
                 }
@@ -217,8 +264,8 @@ private fun FundFormDialog(
                     name = name.trim(), code = code.trim().uppercase(), nameEn = nameEn.trim(),
                     description = description.trim(), active = active
                 ))
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

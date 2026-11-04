@@ -82,6 +82,13 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
             }
         }
         is AuthUiState.Authed -> androidx.compose.runtime.key(s.user.id, s.user.role, s.user.mosqueId) {
+            androidx.compose.runtime.LaunchedEffect(s.user.id) {
+                try {
+                    com.saif.mosque.data.outbox.DirectorySync.schedulePending(container.context, s.user.id)
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {
+                    // Drafts remain durable and recovery will try scheduling again.
+                }
+            }
             val nav = rememberNavController()
             val start = if (Permissions.isPlatform(s.user.role)) Screen.Platform.route else Screen.Dashboard.route
             androidx.compose.runtime.CompositionLocalProvider(LocalOfflineMode provides s.offline) {
