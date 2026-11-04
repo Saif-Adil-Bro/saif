@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mosque Accounts</string>
+    <string name="tagline">Digital ledger for mosque committees</string>
+
+    <!-- Auth -->
+    <string name="login_welcome">Welcome back</string>
+    <string name="login_subtitle">Sign in to your mosque account</string>
+    <string name="email">Email</string>
+    <string name="email_hint">you@example.com</string>
+    <string name="password">Password</string>
+    <string name="password_hint">••••••••</string>
+    <string name="sign_in">Sign in</string>
+    <string name="signing_in">Signing in…</string>
+    <string name="login_failed">Sign-in failed</string>
+    <string name="account_locked">Too many failed attempts. Try again in %1$d min.</string>
+    <string name="demo_superadmin">Demo platform admin</string>
+    <string name="demo_admin">Demo mosque admin</string>
+    <string name="demo_note">Quick-fill demo credentials (spec 0.5 / 13)</string>
+
+    <!-- Common -->
+    <string name="loading">Loading…</string>
+    <string name="retry">Retry</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="add">Add</string>
+    <string name="confirm_delete">Confirm delete</string>
+    <string name="delete_question">Delete this record? This cannot be undone.</string>
+    <string name="required_field">This field is required</string>
+    <string name="invalid_email">Enter a valid email</string>
+    <string name="weak_password">Password must be at least 8 characters</string>
+    <string name="invalid_amount">Amount must be greater than 0</string>
+    <string name="invalid_phone">Enter a valid Bangladeshi phone (01XXXXXXXXX)</string>
+    <string name="empty_list">Nothing here yet</string>
+    <string name="permission_denied">Your role does not allow this action</string>
+    <string name="error_generic">Something went wrong</string>
+    <string name="select_option">Select</string>
+    <string name="today">Today</string>
+    <string name="search">Search</string>
+    <string name="active">Active</string>
+    <string name="inactive">Inactive</string>
+    <string name="all">All</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
+    <string name="amount">Amount</string>
+    <string name="date">Date</string>
+    <string name="note">Note</string>
+    <string name="description">Description</string>
+    <string name="name">Name</string>
+    <string name="phone">Phone</string>
+    <string name="address">Address</string>
+    <string name="status">Status</string>
+    <string name="balance">Balance</string>
+    <string name="actions">Actions</string>
+    <string name="saved_ok">Saved successfully</string>
+    <string name="deleted_ok">Deleted</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard">Dashboard</string>
+    <string name="total_balance">Total balance</string>
+    <string name="monthly_income">This month income</string>
+    <string name="monthly_expense">This month expense</string>
+    <string name="active_donors">Active donors</string>
+    <string name="fund_count">Funds</string>
+    <string name="fund_balances">Fund balances</string>
+    <string name="recent_transactions">Recent transactions</string>
+    <string name="no_transactions">No transactions yet</string>
+
+    <!-- Funds -->
+    <string name="funds">Funds</string>
+    <string name="add_fund">Add fund</string>
+    <string name="edit_fund">Edit fund</string>
+    <string name="fund_name">Fund name (Bangla)</string>
+    <string name="fund_code">Code (e.g. GEN)</string>
+    <string name="fund_name_en">Fund name (English)</string>
+    <string name="delete_fund_q">Delete this fund?</string>
+
+    <!-- Contributions -->
+    <string name="contributions">Contributions</string>
+    <string name="add_contribution">Add contribution</string>
+    <string name="edit_contribution">Edit contribution</string>
+    <string name="donor">Donor</string>
+    <string name="select_donor">Select donor</string>
+    <string name="donor_name_free">Donor name (not registered)</string>
+    <string name="account">Fund</string>
+    <string name="receipt_no">Receipt no.</string>
+
+    <!-- Expenses -->
+    <string name="expenses">Expenses</string>
+    <string name="add_expense">Add expense</string>
+    <string name="edit_expense">Edit expense</string>
+    <string name="expense_title">Title</string>
+    <string name="category">Category</string>
+    <string name="paid_to">Paid to</string>
+
+    <!-- Donors -->
+    <string name="donors">Donors</string>
+    <string name="add_donor">Add donor</string>
+    <string name="edit_donor">Edit donor</string>
+    <string name="total_donated">Total donated</string>
+
+    <!-- Members -->
+    <string name="members">Committee members</string>
+    <string name="add_member">Add member</string>
+    <string name="edit_member">Edit member</string>
+    <string name="role">Role</string>
+    <string name="designation">Designation</string>
+    <string name="cannot_delete_self">You cannot delete your own account (400)</string>
+    <string name="cannot_deactivate_self">You cannot deactivate your own account (400)</string>
+    <string name="delete_member_q">Remove this member?</string>
+
+    <!-- Transfers -->
+    <string name="transfers">Fund transfers</string>
+    <string name="add_transfer">New transfer</string>
+    <string name="edit_transfer">Edit transfer</string>
+    <string name="from_account">From fund</string>
+    <string name="to_account">To fund</string>
+    <string name="same_account_error">Source and destination must differ</string>
+    <string name="insufficient_balance">Insufficient balance in source fund</string>
+
+    <!-- Reports -->
+    <string name="reports">Reports</string>
+    <string name="month">Month</string>
+    <string name="year">Year</string>
+    <string name="income">Income</string>
+    <string name="expense">Expense</string>
+    <string name="closing_balance">Closing balance</string>
+    <string name="by_fund">By fund</string>
+    <string name="prev_month">Previous</string>
+    <string name="next_month">Next</string>
+    <string name="contributions_of_month">Contributions of the month</string>
+    <string name="expenses_of_month">Expenses of the month</string>
+
+    <!-- More -->
+    <string name="more">More</string>
+    <string name="logout">Log out</string>
+    <string name="current_user">Signed in as</string>
+
+    <!-- Platform admin -->
+    <string name="mosques">Mosques</string>
+    <string name="platform_console">Platform console</string>
+    <string name="platform_summary">Platform summary</string>
+    <string name="total_mosques">Total mosques</string>
+    <string name="active_mosques">Active mosques</string>
+    <string name="total_users">Committee users</string>
+    <string name="combined_balance">Combined balance</string>
+    <string name="new_mosque">New mosque</string>
+    <string name="edit_mosque">Edit mosque</string>
+    <string name="search_mosque">Search name / address / district / email</string>
+    <string name="mosque_name">Mosque name (Bangla)</string>
+    <string name="mosque_name_en">Mosque name (English)</string>
+    <string name="district">District</string>
+    <string name="upazila">Upazila</string>
+    <string name="established_year">Established year</string>
+    <string name="registration_no">Registration no.</string>
+    <string name="admin_name">First admin name</string>
+    <string name="admin_email">First admin email</string>
+    <string name="admin_phone">First admin phone</string>
+    <string name="admin_password_optional">Admin password (blank = auto-generate)</string>
+    <string name="create_mosque">Create mosque</string>
+    <string name="activate">Activate</string>
+    <string name="deactivate">Deactivate</string>
+    <string name="mosque_deactivated_warn">Deactivating blocks all logins for this mosque; data is kept.</string>
+    <string name="demo_mosque_protected">The demo mosque cannot be deactivated</string>
+    <string name="credentials_title">One-time credentials</string>
+    <string name="credentials_warning">Shown only once. Copy and share securely with the mosque admin.</string>
+    <string name="temp_password">Temporary password</string>
+    <string name="mosque_created">Mosque created with 5 starter funds</string>
+
+    <!-- Roles (spec 2.1) -->
+    <string name="role_superadmin">Platform Admin</string>
+    <string name="role_admin">Mosque Admin</string>
+    <string name="role_president">President</string>
+    <string name="role_secretary">Secretary</string>
+    <string name="role_treasurer">Treasurer</string>
+    <string name="role_cashier">Cashier</string>
+    <string name="role_imam">Imam</string>
+    <string name="role_member">Member</string>
+
+    <!-- Starter funds (spec 1.7) -->
+    <string name="fund_gen">General</string>
+    <string name="fund_chd">Subscription</string>
+    <string name="fund_con">Construction</string>
+    <string name="fund_wak">Donation &amp; welfare</string>
+    <string name="fund_utl">Utility</string>
+
+    <string name="mosque_inactive">This mosque is currently inactive</string>
+    <string name="network_error">Network error. Check your internet and try again</string>
+    <string name="email_in_use">An account with this email already exists</string>
+    <string name="password_confirm">Confirm password</string>
+    <string name="passwords_dont_match">Passwords do not match</string>
+    <string name="select_role">Select role</string>
+    <string name="copy_all">Copy all</string>
+    <string name="all_funds">All funds</string>
+    <string name="total">Total</string>
+
+    <string-array name="months">
+        <item>January</item>
+        <item>February</item>
+        <item>March</item>
+        <item>April</item>
+        <item>May</item>
+        <item>June</item>
+        <item>July</item>
+        <item>August</item>
+        <item>September</item>
+        <item>October</item>
+        <item>November</item>
+        <item>December</item>
+    </string-array>
+</resources>

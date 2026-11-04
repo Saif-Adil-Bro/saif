@@ -1,0 +1,73 @@
+package com.saif.mosque.ui.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.saif.mosque.data.SessionManager
+import com.saif.mosque.data.model.AppUser
+import com.saif.mosque.data.repository.AuthException
+import com.saif.mosque.data.repository.AuthRepository
+import com.saif.mosque.util.Msg
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+sealed interface AuthUiState {
+    data object Loading : AuthUiState
+    data object Guest : AuthUiState
+    data class Authed(val user: AppUser) : AuthUiState
+}
+
+class AuthViewModel(
+    private val repo: AuthRepository,
+    private val session: SessionManager
+) : ViewModel() {
+
+    val state: StateFlow<AuthUiState> = combine(repo.authState, session.userFlow) { fb, cached ->
+        when {
+            fb == null && cached == null -> AuthUiState.Guest
+            fb != null && cached != null -> AuthUiState.Authed(cached)
+            else -> AuthUiState.Loading
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthUiState.Loading)
+
+    private val _messages = MutableSharedFlow<Msg>()
+    val messages = _messages.asSharedFlow()
+
+    /** Last login lock: epoch millis until which login is disabled, or null. */
+    var loginLockedUntilMs: Long? = null
+        private set
+
+    init {
+        // If Firebase has a persisted session but the profile cache is empty, restore it.
+        viewModelScope.launch {
+            repo.authState.collect { fb ->
+                if (fb != null && session.userFlow.first() == null) {
+                    repo.refreshProfile()
+                }
+            }
+        }
+    }
+
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            val result = repo.login(email, password)
+            result.onFailure { e ->
+                if (e is AuthException) {
+                    e.retryAfterMs?.let { loginLockedUntilMs = System.currentTimeMillis() + it }
+                    _messages.emit(Msg.Res(e.resId))
+                } else {
+                    _messages.emit(Msg.Text(e.message ?: "error"))
+                }
+            }
+        }
+    }
+
+    fun logout() {
+        viewModelScope.launch { repo.logout() }
+    }
+}

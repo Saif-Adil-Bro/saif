@@ -1,0 +1,90 @@
+rules_version = '2';
+// Mosque Account Management System — Firestore Security Rules
+// Multi-tenant: every mosque's data lives under /mosques/{mosqueId}/...
+// Roles live on /users/{uid}.role (client-written only via these rules).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isPlatformAdmin() {
+      return signedIn() && userData().role == 'SUPERADMIN' && userData().active == true;
+    }
+    // role of the caller inside a given mosque (null if not a member)
+    function roleIn(mosqueId) {
+      return signedIn() && userData().mosqueId == mosqueId && userData().active == true
+        ? userData().role : null;
+    }
+    function mosqueActive(mosqueId) {
+      return get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true;
+    }
+    function activeMember(mosqueId) {
+      return roleIn(mosqueId) != null && mosqueActive(mosqueId);
+    }
+
+    // ---- write permission per sub-collection (spec section 2.2) ----
+    function canWriteFunds(r)    { return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER'; }
+    function canWriteMoney(r)    { return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER' || r == 'CASHIER'; }
+    function canWriteDonors(r)   { return canWriteMoney(r); }
+    function canDeleteDonors(r)  { return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER'; }
+    function canWriteMembers(r) { return r == 'ADMIN' || r == 'PRESIDENT' || r == 'SECRETARY'; }
+    function canWriteTransfers(r){ return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER'; }
+
+    // ---- users (committee members + superadmin profile) ----
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isPlatformAdmin()
+        || (activeMember(request.resource.data.mosqueId)
+            && canWriteMembers(roleIn(request.resource.data.mosqueId)));
+      allow update: if isPlatformAdmin()
+        || (activeMember(resource.data.mosqueId)
+            && canWriteMembers(roleIn(resource.data.mosqueId))
+            // spec 2.3: cannot deactivate yourself
+            && !(uid == request.auth.uid && request.resource.data.active == false));
+      allow delete: if isPlatformAdmin()
+        || (activeMember(resource.data.mosqueId)
+            && canWriteMembers(roleIn(resource.data.mosqueId))
+            // spec 2.3: cannot delete yourself
+            && uid != request.auth.uid);
+    }
+
+    // ---- mosques (platform console only) ----
+    match /mosques/{mosqueId} {
+      allow read: if isPlatformAdmin() || activeMember(mosqueId);
+      allow create, update: if isPlatformAdmin();
+      allow delete: if false; // spec 1.11: only deactivate, data is never deleted
+
+      // ---- tenant sub-collections ----
+      match /funds/{doc} {
+        allow read: if isPlatformAdmin() || activeMember(mosqueId);
+        allow write: if isPlatformAdmin()
+          || (activeMember(mosqueId) && canWriteFunds(roleIn(mosqueId)));
+      }
+      match /contributions/{doc} {
+        allow read: if isPlatformAdmin() || activeMember(mosqueId);
+        allow write: if isPlatformAdmin()
+          || (activeMember(mosqueId) && canWriteMoney(roleIn(mosqueId)));
+      }
+      match /expenses/{doc} {
+        allow read: if isPlatformAdmin() || activeMember(mosqueId);
+        allow write: if isPlatformAdmin()
+          || (activeMember(mosqueId) && canWriteMoney(roleIn(mosqueId)));
+      }
+      match /transfers/{doc} {
+        allow read: if isPlatformAdmin() || activeMember(mosqueId);
+        allow write: if isPlatformAdmin()
+          || (activeMember(mosqueId) && canWriteTransfers(roleIn(mosqueId)));
+      }
+      match /donors/{doc} {
+        allow read: if isPlatformAdmin() || activeMember(mosqueId);
+        allow create, update: if isPlatformAdmin()
+          || (activeMember(mosqueId) && canWriteDonors(roleIn(mosqueId)));
+        allow delete: if isPlatformAdmin()
+          || (activeMember(mosqueId) && canDeleteDonors(roleIn(mosqueId)));
+      }
+    }
+  }
+}
