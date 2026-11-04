@@ -49,12 +49,32 @@ service cloud.firestore {
         getAfter(mosque).data.directoryOpId == docId && getAfter(mosque).data.directoryOpKind == kind &&
         getAfter(mosque).data[counter] == get(mosque).data[counter] + 1;
     }
-    function directoryUpdate(mosqueId, kind) {
+    function editReceiptPair(mosqueId, kind, docId) {
+      let next = request.resource.data;
+      let receipt = /databases/$(database)/documents/mosques/$(mosqueId)/syncReceipts/$(next.lastSyncOpId);
+      return next.lastSyncOpId is string && next.lastSyncOpId.size() > 0 &&
+        next.lastSyncOwner == request.auth.uid && !exists(receipt) && existsAfter(receipt) &&
+        getAfter(receipt).data.uid == request.auth.uid && getAfter(receipt).data.kind == kind &&
+        getAfter(receipt).data.targetId == docId && getAfter(receipt).data.action in ['update', 'archive'];
+    }
+    function directoryUpdate(mosqueId, kind, docId) {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       return canDirectory(mosqueId, kind) && resource.data.mosqueId == mosqueId &&
         directoryFields(request.resource.data, kind) &&
-        changed.hasOnly(kind == 'funds' ? ['name', 'code', 'nameEn', 'description', 'active'] : ['name', 'phone', 'address', 'active']) &&
+        changed.hasOnly(kind == 'funds' ? ['name', 'code', 'nameEn', 'description', 'active', 'lastSyncOpId', 'lastSyncOwner'] : ['name', 'phone', 'address', 'active', 'lastSyncOpId', 'lastSyncOwner']) &&
+        (!changed.hasAny(['lastSyncOpId', 'lastSyncOwner']) || editReceiptPair(mosqueId, kind, docId)) &&
         (kind != 'donors' || !changed.hasAny(['active']) || request.resource.data.active == true || canDirectory(mosqueId, 'funds'));
+    }
+    function receiptCreate(mosqueId, opId) {
+      let data = request.resource.data;
+      let target = /databases/$(database)/documents/mosques/$(mosqueId)/$(data.kind)/$(data.targetId);
+      return data.keys().hasOnly(['uid', 'kind', 'targetId', 'action']) &&
+        data.keys().hasAll(['uid', 'kind', 'targetId', 'action']) && data.uid == request.auth.uid &&
+        data.kind in ['funds', 'donors'] && data.action in ['update', 'archive'] &&
+        data.targetId is string && data.targetId.size() > 0 && canDirectory(mosqueId, data.kind) &&
+        exists(target) && getAfter(target).data.lastSyncOpId == opId &&
+        getAfter(target).data.lastSyncOwner == request.auth.uid &&
+        (data.action != 'archive' || getAfter(target).data.active == false);
     }
     function canManageMember(mosqueId, target) {
       return (platform() || (activeTenant(mosqueId) &&
@@ -114,10 +134,11 @@ service cloud.firestore {
         || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
         || memberCounterDelete(mosqueId);
       match /{collection}/{doc} {
-        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers']
+        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts']
           && (platform() || activeTenant(mosqueId));
-        allow create: if collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc);
-        allow update: if collection in ['funds', 'donors'] && directoryUpdate(mosqueId, collection);
+        allow create: if (collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc))
+          || (collection == 'syncReceipts' && receiptCreate(mosqueId, doc));
+        allow update: if collection in ['funds', 'donors'] && directoryUpdate(mosqueId, collection, doc);
         allow delete: if false;
       }
     }

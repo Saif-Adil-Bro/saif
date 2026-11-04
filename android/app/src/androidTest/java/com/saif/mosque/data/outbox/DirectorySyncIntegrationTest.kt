@@ -69,6 +69,35 @@ class DirectorySyncIntegrationTest {
         assertNull(store.find(first.id))
         assertEquals(1L, mosque.get(Source.SERVER).await().getLong("fundCount"))
 
+        // Offline metadata edits use an atomic receipt and reject stale snapshots.
+        val originalFund = fund.toObject(Fund::class.java)!!
+        db.disableNetwork().await()
+        val edit = store.editFund("outbox-a", "sync-test-mosque", originalFund, originalFund.copy(name = "Edited offline"))
+        db.enableNetwork().await()
+        assertEquals(ListenableWorker.Result.success(), sync(edit.id))
+        assertNull(store.find(edit.id))
+        assertEquals("Edited offline", mosque.collection("funds").document(first.id).get(Source.SERVER).await().getString("name"))
+        assertEquals("outbox-a", mosque.collection("syncReceipts").document(edit.id).get(Source.SERVER).await().getString("uid"))
+
+        // A lost acknowledgement must not replay an older edit over a newer server change.
+        mosque.collection("funds").document(first.id).update("name", "Later online change").await()
+        val editValues = ContentValues().apply {
+            put("id", edit.id); put("uid", edit.uid); put("mosque_id", edit.mosqueId); put("kind", edit.kind)
+            put("name", edit.name); put("payload", edit.payload); put("created_at", edit.createdAt)
+            put("state", "PENDING"); putNull("failure"); put("action", edit.action)
+            put("target_id", edit.targetId); put("expected_payload", edit.expectedPayload)
+        }
+        store.writableDatabase.insertOrThrow("drafts", null, editValues)
+        assertEquals(ListenableWorker.Result.success(), sync(edit.id))
+        assertEquals("Later online change", mosque.collection("funds").document(first.id).get(Source.SERVER).await().getString("name"))
+        val currentFund = mosque.collection("funds").document(first.id).get(Source.SERVER).await().toObject(Fund::class.java)!!
+        val stale = store.editFund("outbox-a", "sync-test-mosque", currentFund, currentFund.copy(name = "Stale edit"))
+        mosque.collection("funds").document(first.id).update("name", "Another device").await()
+        assertEquals(ListenableWorker.Result.success(), sync(stale.id))
+        assertEquals("CONFLICT", store.find(stale.id)?.failure)
+        assertEquals("Another device", mosque.collection("funds").document(first.id).get(Source.SERVER).await().getString("name"))
+        store.discardBlocked(stale.id, "outbox-a", "sync-test-mosque")
+
         val donor = store.addDonor("outbox-a", "sync-test-mosque", Donor(name = "Offline donor"))
         login("b@example.test")
         assertEquals(ListenableWorker.Result.success(), sync(donor.id))
@@ -76,6 +105,14 @@ class DirectorySyncIntegrationTest {
         login("a@example.test")
         assertEquals(ListenableWorker.Result.success(), sync(donor.id))
         assertNull(store.find(donor.id))
+        assertEquals(1L, mosque.get(Source.SERVER).await().getLong("donorCount"))
+        val donorRef = mosque.collection("donors").document(donor.id)
+        val donorBeforeArchive = donorRef.get(Source.SERVER).await().toObject(Donor::class.java)!!
+        val archive = store.editDonor("outbox-a", "sync-test-mosque", donorBeforeArchive,
+            donorBeforeArchive.copy(active = false), archive = true)
+        assertEquals(ListenableWorker.Result.success(), sync(archive.id))
+        assertEquals(false, donorRef.get(Source.SERVER).await().getBoolean("active"))
+        assertEquals("archive", mosque.collection("syncReceipts").document(archive.id).get(Source.SERVER).await().getString("action"))
         assertEquals(1L, mosque.get(Source.SERVER).await().getLong("donorCount"))
 
         val drafts = listOf(

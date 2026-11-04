@@ -145,12 +145,16 @@ replace production balances from this report.
   only when the cached profile matches the current Firebase UID.
   Cached data may be incomplete or stale, and a remote revocation cannot be known
   until connectivity returns. The app revalidates the session when online.
-  Only new fund and donor records can currently be queued offline; all other
-  offline edits remain disabled. The queue stores drafts in a local SQLite database,
+  Fund and donor creation, metadata edits and archive actions can be queued offline;
+  all other offline edits remain disabled. The queue stores drafts in a local SQLite database,
   scopes them by Firebase UID and mosque, and uses WorkManager to retry when a
   connection returns. Server-side role and mosque status are rechecked, and an
-  immutable operation receipt prevents retrying a creation as a second record.
-  Pending or unconfirmed items appear separately and do not count as online data.
+  immutable operation receipts prevent retries from reapplying a creation or edit.
+  Queued edits compare their original metadata with the latest server version;
+  conflicts remain visible and must be discarded locally and re-entered from the
+  latest record. Pending or unconfirmed items appear separately and do not count
+  as online data. Receipts are retained indefinitely and consume Firestore quota;
+  do not delete them while any old client could retry the corresponding operation.
   The queue is excluded from backup; clearing app data or uninstalling loses
   unsynced drafts. A different account cannot sync them. If the account is fully
   deactivated and signed out, its drafts cannot currently be viewed until that

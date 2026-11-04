@@ -198,7 +198,7 @@
     <string name="profile">প্রোফাইল</string>
     <string name="you">আপনি</string>
     <string name="admin_details">অ্যাডমিনের তথ্য</string>
-    <string name="offline_read_only">অফলাইন: নতুন তহবিল ও দাতা ডিভাইসে রাখা যাবে। অন্য পরিবর্তনে সংযোগ প্রয়োজন।</string>
+    <string name="offline_read_only">অফলাইন: তহবিল ও দাতার পরিবর্তন ডিভাইসে রাখা যাবে। অন্য পরিবর্তনে সংযোগ প্রয়োজন।</string>
     <string name="offline_login_required">অ্যাপ ব্যবহারের আগে ইন্টারনেট সংযোগ দিয়ে অ্যাকাউন্ট যাচাই করুন।</string>
     <string name="pending_count">সিঙ্ক অপেক্ষায়: %1$d</string>
     <string name="pending_title">সিঙ্ক অপেক্ষায়</string>
@@ -211,4 +211,10 @@
     <string name="local_save_failed">ডিভাইসে সংরক্ষণ হয়নি। স্টোরেজ পরীক্ষা করে আবার চেষ্টা করুন।</string>
     <string name="saving">সংরক্ষণ হচ্ছে…</string>
     <string name="close">বন্ধ</string>
+    <string name="pending_add">নতুন তথ্য</string>
+    <string name="pending_update">সম্পাদনা</string>
+    <string name="pending_archive">আর্কাইভ</string>
+    <string name="sync_conflict_help">অন্য জায়গায় তথ্যটি বদলেছে। এই স্থানীয় খসড়া বাদ দিয়ে সর্বশেষ তথ্য সম্পাদনা করুন।</string>
+    <string name="discard_local">স্থানীয় খসড়া বাদ</string>
+    <string name="discard_local_warning">এই ডিভাইসের খসড়াটি বাদ দেবেন? এটি আগে পাঠানো হয়ে থাকলে পরে অনলাইনে দেখা যেতে পারে। অনলাইন পরিবর্তন এতে ফিরবে না।</string>
 </resources>

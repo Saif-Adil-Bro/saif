@@ -96,43 +96,44 @@ class FundsViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun clearAddError() { addError = false }
-    fun add(fund: Fund, onSaved: () -> Unit) {
+    private fun queue(onSaved: () -> Unit, form: Boolean = true,
+                      build: suspend () -> com.saif.mosque.data.outbox.DirectoryDraft) {
         if (adding) return
         adding = true
         addError = false
         viewModelScope.launch {
             val stored = try {
                 check(auth.currentUser?.uid == user.id)
-                val draft = outbox.addFund(user.id, mosqueId, fund)
-                // Scheduling failure cannot undo the already durable draft. App startup
-                // and periodic recovery will schedule it again.
+                val draft = build()
+                // A scheduling failure cannot undo the durable draft; recovery will retry.
                 runCatching { com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
                     com.saif.mosque.data.outbox.DirectorySync.scheduleRecovery(context) }
                 true
             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
-                addError = true; false
+                addError = true
+                false
             } finally { adding = false }
             if (stored) { onSaved(); _messages.emit(Msg.Res(R.string.local_pending_saved)) }
+            else if (!form) _messages.emit(Msg.Res(R.string.local_save_failed))
         }
     }
+    fun add(fund: Fund, onSaved: () -> Unit) = queue(onSaved) { outbox.addFund(user.id, mosqueId, fund) }
+    fun update(old: Fund, fund: Fund, onSaved: () -> Unit) =
+        queue(onSaved) { outbox.editFund(user.id, mosqueId, old, fund) }
+    fun delete(fund: Fund) =
+        queue({}, form = false) { outbox.editFund(user.id, mosqueId, fund, fund.copy(active = false), archive = true) }
     fun retry(draft: com.saif.mosque.data.outbox.DirectoryDraft) = viewModelScope.launch {
         if (auth.currentUser?.uid == user.id && outbox.retry(draft.id, user.id, mosqueId)) {
             com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
         }
     }
-    fun update(old: Fund, fund: Fund) = mutate { repo.updateFund(mosqueId, old, fund) }
-    fun delete(fund: Fund) = mutate { repo.deleteFund(mosqueId, fund.id) }
-
-    private fun mutate(block: suspend () -> Unit) {
-        viewModelScope.launch {
-            try {
-                block()
-                _messages.emit(Msg.Res(R.string.saved_ok))
-            } catch (e: Exception) {
-                _messages.emit(Msg.Text(e.message ?: "error"))
-            }
+    fun discard(draft: com.saif.mosque.data.outbox.DirectoryDraft) = viewModelScope.launch {
+        if (auth.currentUser?.uid == user.id) {
+            com.saif.mosque.data.outbox.DirectorySync.cancel(context, draft.id)
+            outbox.discardBlocked(draft.id, user.id, mosqueId)
         }
     }
+
 }
 
 @Composable
@@ -141,7 +142,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
     val vm: FundsViewModel = viewModel { FundsViewModel(container.ledgerRepository, container.outbox, container.auth, container.context, mosqueId, user) }
     val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
     val canAdd = vm.canEdit
-    val canEdit = vm.canEdit && !offline
+    val canEdit = vm.canEdit
     val pending by vm.pending.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -169,7 +170,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner)) {
-            com.saif.mosque.ui.components.PendingDirectory(pending, !offline) { vm.retry(it) }
+            com.saif.mosque.ui.components.PendingDirectory(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
             androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
         StateBox(state) { funds ->
             if (funds.isEmpty()) {
@@ -185,7 +186,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
                             title = "${fund.code} · ${fund.name}", supporting = fund.nameEn,
                             amount = Format.money(fund.balance), amountLabel = stringResource(R.string.balance),
                             status = if (!fund.active) stringResource(R.string.inactive) else null,
-                            onEdit = if (canEdit) ({ editing = fund }) else null,
+                            onEdit = if (canEdit) ({ vm.clearAddError(); editing = fund }) else null,
                             onDelete = if (canEdit && fund.active) ({ deleting = fund }) else null,
                             archive = true, deleteLabel = stringResource(R.string.archive))
                     }
@@ -205,7 +206,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
             onDismiss = { if (!vm.adding) editing = null },
             onSave = { fund ->
                 if (target.id.isEmpty()) vm.add(fund) { editing = null }
-                else { vm.update(target, fund.copy(id = target.id)); editing = null }
+                else vm.update(target, fund.copy(id = target.id)) { editing = null }
             }
         )
     }
@@ -256,7 +257,7 @@ private fun FundFormDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
+            TextButton(enabled = !saving, onClick = {
                 if (Validators.required(name) != null || Validators.required(code) != null) {
                     error = "required"; return@TextButton
                 }

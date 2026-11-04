@@ -97,39 +97,44 @@ class DonorsViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun clearAddError() { addError = false }
-    fun add(d: Donor, onSaved: () -> Unit) {
+    private fun queue(onSaved: () -> Unit, form: Boolean = true,
+                      build: suspend () -> com.saif.mosque.data.outbox.DirectoryDraft) {
         if (adding) return
         adding = true
         addError = false
         viewModelScope.launch {
             val stored = try {
                 check(auth.currentUser?.uid == user.id)
-                val draft = outbox.addDonor(user.id, mosqueId, d)
-                // Scheduling failure cannot undo the already durable draft. App startup
-                // and periodic recovery will schedule it again.
+                val draft = build()
+                // A scheduling failure cannot undo the durable draft; recovery will retry.
                 runCatching { com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
                     com.saif.mosque.data.outbox.DirectorySync.scheduleRecovery(context) }
                 true
             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
-                addError = true; false
+                addError = true
+                false
             } finally { adding = false }
             if (stored) { onSaved(); _messages.emit(Msg.Res(R.string.local_pending_saved)) }
+            else if (!form) _messages.emit(Msg.Res(R.string.local_save_failed))
         }
     }
+    fun add(d: Donor, onSaved: () -> Unit) = queue(onSaved) { outbox.addDonor(user.id, mosqueId, d) }
+    fun update(old: Donor, d: Donor, onSaved: () -> Unit) =
+        queue(onSaved) { outbox.editDonor(user.id, mosqueId, old, d) }
+    fun delete(d: Donor) =
+        queue({}, form = false) { outbox.editDonor(user.id, mosqueId, d, d.copy(active = false), archive = true) }
     fun retry(draft: com.saif.mosque.data.outbox.DirectoryDraft) = viewModelScope.launch {
         if (auth.currentUser?.uid == user.id && outbox.retry(draft.id, user.id, mosqueId)) {
             com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
         }
     }
-    fun update(old: Donor, d: Donor) = mutate { repo.updateDonor(mosqueId, old, d) }
-    fun delete(d: Donor) = mutate { repo.deleteDonor(mosqueId, d.id) }
-
-    private fun mutate(block: suspend () -> Unit) {
-        viewModelScope.launch {
-            try { block(); _messages.emit(Msg.Res(R.string.saved_ok)) }
-            catch (e: Exception) { _messages.emit(Msg.Text(e.message ?: "error")) }
+    fun discard(draft: com.saif.mosque.data.outbox.DirectoryDraft) = viewModelScope.launch {
+        if (auth.currentUser?.uid == user.id) {
+            com.saif.mosque.data.outbox.DirectorySync.cancel(context, draft.id)
+            outbox.discardBlocked(draft.id, user.id, mosqueId)
         }
     }
+
 }
 
 @Composable
@@ -138,9 +143,9 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
     val vm: DonorsViewModel = viewModel { DonorsViewModel(container.ledgerRepository, container.outbox, container.auth, container.context, mosqueId, user) }
     val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
     val canAdd = vm.canEdit
-    val canEdit = vm.canEdit && !offline
+    val canEdit = vm.canEdit
     val pending by vm.pending.collectAsStateWithLifecycle()
-    val canDelete = vm.canDelete && !com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canDelete = vm.canDelete
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -168,7 +173,7 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner)) {
-            com.saif.mosque.ui.components.PendingDirectory(pending, !offline) { vm.retry(it) }
+            com.saif.mosque.ui.components.PendingDirectory(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
             androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
         StateBox(state) { donors ->
             val filtered = donors.filter {
@@ -194,7 +199,7 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
                         amount = Format.money(d.totalDonated), amountLabel = stringResource(R.string.total_donated),
                         amountColor = MaterialTheme.colorScheme.primary,
                         status = if (!d.active) stringResource(R.string.inactive) else null,
-                        onEdit = if (canEdit) ({ editing = d }) else null,
+                        onEdit = if (canEdit) ({ vm.clearAddError(); editing = d }) else null,
                         onDelete = if (canDelete && d.active) ({ deleting = d }) else null,
                         archive = true, deleteLabel = stringResource(R.string.archive))
                 }
@@ -213,7 +218,7 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
             onDismiss = { if (!vm.adding) editing = null },
             onSave = { d ->
                 if (target.id.isEmpty()) vm.add(d) { editing = null }
-                else { vm.update(target, d.copy(id = target.id)); editing = null }
+                else vm.update(target, d.copy(id = target.id)) { editing = null }
             }
         )
     }
@@ -258,7 +263,7 @@ private fun DonorFormDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
+            TextButton(enabled = !saving, onClick = {
                 if (Validators.required(name) != null) { error = "required"; return@TextButton }
                 if (Validators.bdPhone(phone) != null) return@TextButton
                 onSave(initial.copy(name = name.trim(), phone = phone.trim(),

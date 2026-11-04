@@ -45,4 +45,34 @@ class DirectoryOutboxTest {
         store.remove(draft.id, "u1")
         assertEquals(null, store.find(draft.id))
     }
+
+    @Test fun migrationPreservesVersionOnePendingDrafts() = runBlocking {
+        context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null).use { db ->
+            db.execSQL("""CREATE TABLE drafts (id TEXT PRIMARY KEY NOT NULL, uid TEXT NOT NULL,
+                mosque_id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL,
+                created_at INTEGER NOT NULL, state TEXT NOT NULL, failure TEXT)""")
+            db.execSQL("INSERT INTO drafts VALUES ('old-id','u','a','funds','Old','{}',1,'PENDING',NULL)")
+            db.version = 1
+        }
+        val old = store.find("old-id")
+        assertEquals("add", old?.action)
+        assertEquals("PENDING", old?.state)
+        assertEquals(null, old?.targetId)
+    }
+
+    @Test fun editAndArchiveKeepExpectedStateAndScopedDiscard() = runBlocking {
+        val old = Fund(id = "fund-id", mosqueId = "a", name = "Original", code = "A")
+        val edit = store.editFund("u1", "a", old, old.copy(name = "Updated"))
+        val archive = store.editFund("u1", "a", old, old.copy(active = false), archive = true)
+        assertEquals("update", store.find(edit.id)?.action)
+        assertEquals("fund-id", store.find(edit.id)?.targetId)
+        assertTrue(store.find(edit.id)?.expectedPayload?.contains("Original") == true)
+        assertEquals("archive", store.find(archive.id)?.action)
+        assertFalse(store.discardBlocked(edit.id, "u1", "a"))
+        store.markBlocked(edit.id, "CONFLICT")
+        assertFalse(store.discardBlocked(edit.id, "u2", "a"))
+        assertFalse(store.discardBlocked(edit.id, "u1", "b"))
+        assertTrue(store.discardBlocked(edit.id, "u1", "a"))
+        assertEquals(null, store.find(edit.id))
+    }
 }

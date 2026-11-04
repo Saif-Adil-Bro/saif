@@ -25,9 +25,11 @@ import com.saif.mosque.data.outbox.DirectoryDraft
 
 /** Pending rows are clearly separated from acknowledged Firestore records and balances. */
 @Composable
-fun PendingDirectory(drafts: List<DirectoryDraft>, online: Boolean, onRetry: (DirectoryDraft) -> Unit) {
+fun PendingDirectory(drafts: List<DirectoryDraft>, online: Boolean, onRetry: (DirectoryDraft) -> Unit,
+                     onDiscard: (DirectoryDraft) -> Unit = {}) {
     if (drafts.isEmpty()) return
     var showPending by remember { mutableStateOf(false) }
+    var toDiscard by remember { mutableStateOf<DirectoryDraft?>(null) }
     TextButton(onClick = { showPending = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
         Text(stringResource(R.string.pending_count, drafts.size))
     }
@@ -42,13 +44,23 @@ fun PendingDirectory(drafts: List<DirectoryDraft>, online: Boolean, onRetry: (Di
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(draft.name, style = MaterialTheme.typography.titleSmall)
+                                Text(stringResource(when (draft.action) {
+                                    "update" -> R.string.pending_update
+                                    "archive" -> R.string.pending_archive
+                                    else -> R.string.pending_add
+                                }), style = MaterialTheme.typography.labelSmall)
                                 Text(stringResource(if (draft.state == "BLOCKED") R.string.sync_unconfirmed else R.string.sync_waiting),
                                     color = if (draft.state == "BLOCKED") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodySmall)
                                 if (draft.state == "BLOCKED") {
-                                    Text(stringResource(if (draft.failure == "PERMISSION") R.string.sync_check_permission else R.string.sync_check_record),
+                                    Text(stringResource(when (draft.failure) {
+                                        "PERMISSION" -> R.string.sync_check_permission
+                                        "CONFLICT" -> R.string.sync_conflict_help
+                                        else -> R.string.sync_check_record
+                                    }),
                                         style = MaterialTheme.typography.bodySmall)
                                     TextButton(enabled = online, onClick = { onRetry(draft) }) { Text(stringResource(R.string.retry)) }
+                                    TextButton(onClick = { toDiscard = draft }) { Text(stringResource(R.string.discard_local)) }
                                 }
                             }
                         }
@@ -58,4 +70,13 @@ fun PendingDirectory(drafts: List<DirectoryDraft>, online: Boolean, onRetry: (Di
         },
         confirmButton = { TextButton(onClick = { showPending = false }) { Text(stringResource(R.string.close)) } }
     )
+    toDiscard?.let { draft ->
+        AlertDialog(
+            onDismissRequest = { toDiscard = null },
+            title = { Text(stringResource(R.string.discard_local)) },
+            text = { Text(stringResource(R.string.discard_local_warning)) },
+            confirmButton = { TextButton(onClick = { onDiscard(draft); toDiscard = null }) { Text(stringResource(R.string.discard_local)) } },
+            dismissButton = { TextButton(onClick = { toDiscard = null }) { Text(stringResource(R.string.cancel)) } }
+        )
+    }
 }

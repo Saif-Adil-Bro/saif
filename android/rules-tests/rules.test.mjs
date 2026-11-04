@@ -243,3 +243,31 @@ test('sync markers are bound to the actor and document, and cannot be changed', 
   await assertFails(createDirectory(db, 'funds', 'sync1', { ...fund(), syncOpId: 'sync1', syncOwner: 'admin-a' }));
   if ((await getDoc(doc(db, 'mosques/a'))).data().fundCount !== 2) throw new Error('retry altered counter');
 });
+
+
+function editWithReceipt(db, kind, targetId, opId, change, action = 'update', uid = 'admin-a') {
+  const b = writeBatch(db);
+  b.update(doc(db, `mosques/a/${kind}/${targetId}`), { ...change, lastSyncOpId: opId, lastSyncOwner: uid });
+  b.set(doc(db, `mosques/a/syncReceipts/${opId}`), { uid, kind, targetId, action });
+  return b.commit();
+}
+test('queued metadata updates require a paired immutable receipt', async () => {
+  const db = dbFor('admin-a');
+  await assertSucceeds(editWithReceipt(db, 'funds', 'general', 'edit1', { name: 'Edited' }));
+  await assertFails(editWithReceipt(db, 'funds', 'general', 'edit1', { name: 'Again' }));
+  await assertFails(updateDoc(doc(db, 'mosques/a/funds/general'), { name: 'Unpaired', lastSyncOpId: 'missing', lastSyncOwner: 'admin-a' }));
+  await assertFails(setDoc(doc(db, 'mosques/a/syncReceipts/fake'), { uid: 'admin-a', kind: 'funds', targetId: 'general', action: 'update' }));
+  await assertFails(updateDoc(doc(db, 'mosques/a/syncReceipts/edit1'), { targetId: 'other' }));
+  await assertFails(editWithReceipt(db, 'funds', 'general', 'forged', { name: 'Wrong owner' }, 'update', 'admin-b'));
+  await assertFails(editWithReceipt(db, 'funds', 'general', 'balance', { balance: 1000 }));
+  if ((await getDoc(doc(db, 'mosques/a/funds/general'))).data().name !== 'Edited') throw new Error('invalid update committed');
+});
+
+test('archive receipts respect donor permissions and target state', async () => {
+  const admin = dbFor('admin-a'), cashier = dbFor('cashier-a');
+  await assertSucceeds(createDirectory(admin, 'donors', 'donor-receipt', donor()));
+  await assertFails(editWithReceipt(cashier, 'donors', 'donor-receipt', 'arch1', { active: false }, 'archive', 'cashier-a'));
+  await assertFails(editWithReceipt(admin, 'donors', 'donor-receipt', 'arch2', { active: true }, 'archive'));
+  await assertSucceeds(editWithReceipt(admin, 'donors', 'donor-receipt', 'arch3', { active: false }, 'archive'));
+  await assertFails(editWithReceipt(dbFor('admin-b'), 'donors', 'donor-receipt', 'arch4', { active: false }, 'archive', 'admin-b'));
+});
