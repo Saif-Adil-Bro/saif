@@ -35,7 +35,10 @@ class AuthViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthUiState.Loading)
 
-    private val _messages = MutableSharedFlow<Msg>()
+    // replay = 1: while auth state is Loading the LoginScreen is not composed, so a
+    // failure message emitted during login would be lost (silent failure). With
+    // replay the message is re-delivered when the LoginScreen recomposes.
+    private val _messages = MutableSharedFlow<Msg>(replay = 1)
     val messages = _messages.asSharedFlow()
 
     /** Last login lock: epoch millis until which login is disabled, or null. */
@@ -57,9 +60,11 @@ class AuthViewModel(
         viewModelScope.launch {
             val result = repo.login(email, password)
             result.onFailure { e ->
+                android.util.Log.e("AuthViewModel", "login failed", e)
                 if (e is AuthException) {
                     e.retryAfterMs?.let { loginLockedUntilMs = System.currentTimeMillis() + it }
-                    _messages.emit(Msg.Res(e.resId))
+                    // detail = raw Firebase error (e.g. "[ auth/user-not-found ]") for diagnosis
+                    _messages.emit(Msg.Res(e.resId, e.message?.take(160)))
                 } else {
                     _messages.emit(Msg.Text(e.message ?: "error"))
                 }
