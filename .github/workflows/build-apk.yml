@@ -66,9 +66,24 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        run: gradle --no-daemon assembleDebug
+        run: |
+          set -o pipefail
+          gradle --no-daemon assembleDebug 2>&1 | tee /tmp/build.log
+
+      - name: Comment build error on the PR (if failed)
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### :x: Build failed — last 120 lines of the Gradle log"
+            echo '```'
+            tail -n 120 /tmp/build.log
+            echo '```'
+          } | gh pr comment ${{ github.event.pull_request.number }} --body-file -
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: mosque-hisab-debug-apk
