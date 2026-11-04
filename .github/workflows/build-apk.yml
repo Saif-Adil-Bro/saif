@@ -75,7 +75,7 @@ jobs:
           else
             # capture the first compile/config error lines so they surface in the
             # next step's name (readable via the Actions jobs API)
-            ERR=$(grep -E '^e:|error:|FAILURE:|What went wrong' /tmp/build.log | head -n 6 | tr '\n' ' ' | head -c 600)
+            ERR=$(grep -E -A4 '^e:|error:|FAILURE:|What went wrong' /tmp/build.log | head -n 30 | tr '\n' ' ' | head -c 700)
             echo "err=${ERR}" >> "$GITHUB_OUTPUT"
             exit 1
           fi

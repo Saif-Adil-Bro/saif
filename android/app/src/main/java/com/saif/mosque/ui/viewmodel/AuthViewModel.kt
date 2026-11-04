@@ -46,7 +46,7 @@ class AuthViewModel(
         // If Firebase has a persisted session but the profile cache is empty, restore it.
         viewModelScope.launch {
             repo.authState.collect { fb ->
-                if (fb != null && session.userFlow.valueOrNull() == null) {
+                if (fb != null && session.userFlow.first() == null) {
                     repo.refreshProfile()
                 }
             }

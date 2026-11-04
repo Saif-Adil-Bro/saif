@@ -22,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.saif.mosque.R
@@ -113,7 +115,7 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
 
     // fund labels for the by-fund section
     val fundsState by container.ledgerRepository.observeFunds(mosqueId)
-        .let { flow -> flow.collectAsStateWithLifecycleSafe() }
+        .collectAsState(initial = emptyList())
 
     Scaffold { inner ->
         Column(Modifier.fillMaxSize().padding(inner).padding(16.dp)) {

@@ -53,10 +53,11 @@ object Format {
         Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
             .format(DateTimeFormatter.ISO_LOCAL_DATE)
 
+    /** "MMMM yyyy" in Bengali via CLDR (e.g. জানুয়ারি ২০২৬), digits converted to Bengali. */
     fun monthLabel(context: Context, month: Int, year: Int): String {
-        val months = context.resources.getStringArray(R.array.months)
-        val name = months.getOrElse(month - 1) { month.toString() }
-        return "$name ${bn(year)}"
+        val d = LocalDate.of(year, month, 1)
+        val label = d.format(DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.forLanguageTag("bn")))
+        return bn(label)
     }
 
     /** Current year-month as Pair(year, month). */
