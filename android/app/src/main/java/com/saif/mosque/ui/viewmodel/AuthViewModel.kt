@@ -57,9 +57,11 @@ class AuthViewModel(
         viewModelScope.launch {
             val result = repo.login(email, password)
             result.onFailure { e ->
+                android.util.Log.e("AuthViewModel", "login failed", e)
                 if (e is AuthException) {
                     e.retryAfterMs?.let { loginLockedUntilMs = System.currentTimeMillis() + it }
-                    _messages.emit(Msg.Res(e.resId))
+                    // detail = raw Firebase error (e.g. "[ auth/user-not-found ]") for diagnosis
+                    _messages.emit(Msg.Res(e.resId, e.message?.take(160)))
                 } else {
                     _messages.emit(Msg.Text(e.message ?: "error"))
                 }

@@ -70,7 +70,7 @@ fun LoginScreen(authVm: AuthViewModel, isWideScreen: Boolean) {
     LaunchedEffect(authVm.messages) {
         authVm.messages.collect { msg ->
             val text = when (msg) {
-                is Msg.Res -> context.getString(msg.resId)
+                is Msg.Res -> context.getString(msg.resId) + (msg.detail?.let { " [$it]" } ?: "")
                 is Msg.Text -> msg.message
             }
             snackbar.showSnackbar(text)
