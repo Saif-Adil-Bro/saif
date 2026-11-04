@@ -155,6 +155,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
@@ -169,7 +172,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Run SQLite and responsive component tests
+      - name: Run offline sync, SQLite and responsive component tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 29
@@ -177,7 +180,7 @@ jobs:
           target: default
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: cd android && gradle --no-daemon --console=plain connectedDebugAndroidTest
+          script: bash android/scripts/run-sync-emulator-tests.sh
 
   # Optional: signed release APK. Requires 3 more secrets (see README):
   #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_PASSWORD
