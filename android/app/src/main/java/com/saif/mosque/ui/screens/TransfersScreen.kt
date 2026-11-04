@@ -115,6 +115,7 @@ class TransfersViewModel(
 fun TransfersScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
     val vm: TransfersViewModel = viewModel { TransfersViewModel(container.ledgerRepository, mosqueId, user) }
+    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -134,7 +135,7 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (vm.canEdit) FloatingActionButton(onClick = { editing = Transfer(date = Format.todayIso()) }) {
+            if (canEdit) FloatingActionButton(onClick = { editing = Transfer(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_transfer))
             }
         },
@@ -156,7 +157,7 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
                             title = "$from → $to",
                             supporting = listOf(Format.date(t.date), t.note).filter { it.isNotBlank() }.joinToString(" · "),
                             amount = Format.money(t.amount),
-                            onDelete = if (vm.canEdit) ({ deleting = t }) else null)
+                            onDelete = if (canEdit) ({ deleting = t }) else null)
                     }
                 }
             }
@@ -172,7 +173,7 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
     }
     deleting?.let { t ->
         ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_question),
-            onConfirm = { vm.delete(t) }, onDismiss = { deleting = null })
+            onConfirm = { vm.delete(t) }, onDismiss = { deleting = null }, enabled = canEdit)
     }
 }
 
@@ -205,7 +206,7 @@ private fun TransferFormDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 if (fromId.isBlank() || toId.isBlank() || fromId == toId) { error = "same"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
                 onSave(Transfer(fromAccountId = fromId, toAccountId = toId,

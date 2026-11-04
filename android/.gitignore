@@ -17,3 +17,6 @@ scripts/serviceAccountKey.json
 scripts/*service-account*.json
 
 functions/node_modules/
+
+# Local Firestore rules test dependencies
+rules-tests/node_modules/

@@ -198,4 +198,6 @@
     <string name="profile">প্রোফাইল</string>
     <string name="you">আপনি</string>
     <string name="admin_details">অ্যাডমিনের তথ্য</string>
+    <string name="offline_read_only">অফলাইন: সংরক্ষিত তথ্য দেখানো হচ্ছে; তথ্য অসম্পূর্ণ হতে পারে। এখন পরিবর্তন সংরক্ষণ করা যাবে না।</string>
+    <string name="offline_login_required">অ্যাপ ব্যবহারের আগে ইন্টারনেট সংযোগ দিয়ে অ্যাকাউন্ট যাচাই করুন।</string>
 </resources>

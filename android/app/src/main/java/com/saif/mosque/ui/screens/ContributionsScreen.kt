@@ -118,6 +118,7 @@ class ContributionsViewModel(
 fun ContributionsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
     val vm: ContributionsViewModel = viewModel { ContributionsViewModel(container.ledgerRepository, mosqueId, user) }
+    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
     val state by vm.state.collectAsStateWithLifecycle()
     val donors by vm.donors.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -140,7 +141,7 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (vm.canEdit) FloatingActionButton(onClick = { editing = Contribution(date = Format.todayIso()) }) {
+            if (canEdit) FloatingActionButton(onClick = { editing = Contribution(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_contribution))
             }
         },
@@ -189,8 +190,8 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                         title = c.donorName.ifBlank { "—" },
                         supporting = listOf(fundName, Format.date(c.date), c.receiptNo.takeIf { it.isNotBlank() }?.let { "#$it" }).filterNotNull().joinToString(" · "),
                         amount = Format.money(c.amount), amountColor = MaterialTheme.colorScheme.primary,
-                        onEdit = if (vm.canEdit) ({ editing = c }) else null,
-                        onDelete = if (vm.canEdit) ({ deleting = c }) else null)
+                        onEdit = if (canEdit) ({ editing = c }) else null,
+                        onDelete = if (canEdit) ({ deleting = c }) else null)
                 }
             }
         }
@@ -211,7 +212,7 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     }
     deleting?.let { c ->
         ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_question),
-            onConfirm = { vm.delete(c) }, onDismiss = { deleting = null })
+            onConfirm = { vm.delete(c) }, onDismiss = { deleting = null }, enabled = canEdit)
     }
 }
 
@@ -263,7 +264,7 @@ private fun ContributionFormDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 if (donorId.isBlank() && Validators.required(donorName) != null) { error = "required"; return@TextButton }
                 if (accountId.isBlank()) { error = "required"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }

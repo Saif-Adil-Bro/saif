@@ -80,12 +80,47 @@ class LedgerRepository(
         com.google.firebase.functions.FirebaseFunctions.getInstance().getHttpsCallable("mutate").call(data).await()
     }
 
-    suspend fun addFund(mosqueId: String, fund: Fund) = mutate("funds", "add", mosqueId, value = fund)
-    suspend fun updateFund(mosqueId: String, fund: Fund) = mutate("funds", "update", mosqueId, fund.id, fund)
-    suspend fun deleteFund(mosqueId: String, fundId: String) = mutate("funds", "delete", mosqueId, fundId)
-    suspend fun addDonor(mosqueId: String, donor: Donor) = mutate("donors", "add", mosqueId, value = donor)
-    suspend fun updateDonor(mosqueId: String, donor: Donor) = mutate("donors", "update", mosqueId, donor.id, donor)
-    suspend fun deleteDonor(mosqueId: String, donorId: String) = mutate("donors", "delete", mosqueId, donorId)
+    // Direct directory writes are paired with their counters in one atomic batch.
+    // The matching Firestore rules independently validate both sides of the batch.
+    // Accounting entries still use the trusted backend; never write balances here.
+    private suspend fun addDirectory(mosqueId: String, kind: String, fields: Map<String, Any>) {
+        val parent = mosqueRef(mosqueId)
+        val ref = parent.collection(kind).document()
+        val counter = if (kind == "funds") "fundCount" else "donorCount"
+        db.batch().set(ref, fields).update(parent, mapOf(
+            counter to com.google.firebase.firestore.FieldValue.increment(1),
+            "directoryOpId" to ref.id, "directoryOpKind" to kind
+        )).commit().await()
+    }
+
+    suspend fun addFund(mosqueId: String, fund: Fund) = addDirectory(mosqueId, "funds", mapOf(
+        "mosqueId" to mosqueId, "name" to fund.name.trim(), "code" to fund.code.trim(),
+        "nameEn" to fund.nameEn.trim(), "description" to fund.description.trim(),
+        "active" to fund.active, "balance" to 0
+    ))
+    suspend fun updateFund(mosqueId: String, fund: Fund) {
+        coll(mosqueId, "funds").document(fund.id).update(mapOf(
+            "name" to fund.name.trim(), "code" to fund.code.trim(), "nameEn" to fund.nameEn.trim(),
+            "description" to fund.description.trim(), "active" to fund.active
+        )).await()
+    }
+    suspend fun deleteFund(mosqueId: String, fundId: String) {
+        coll(mosqueId, "funds").document(fundId).update("active", false).await()
+    }
+    suspend fun addDonor(mosqueId: String, donor: Donor) = addDirectory(mosqueId, "donors", mapOf(
+        "mosqueId" to mosqueId, "name" to donor.name.trim(), "phone" to donor.phone.trim(),
+        "address" to donor.address.trim(), "active" to donor.active, "totalDonated" to 0,
+        "createdAt" to System.currentTimeMillis()
+    ))
+    suspend fun updateDonor(mosqueId: String, donor: Donor) {
+        coll(mosqueId, "donors").document(donor.id).update(mapOf(
+            "name" to donor.name.trim(), "phone" to donor.phone.trim(), "address" to donor.address.trim(),
+            "active" to donor.active
+        )).await()
+    }
+    suspend fun deleteDonor(mosqueId: String, donorId: String) {
+        coll(mosqueId, "donors").document(donorId).update("active", false).await()
+    }
 
     suspend fun addContribution(mosqueId: String, c: Contribution, userId: String) =
         mutate("contributions", "add", mosqueId, value = c)

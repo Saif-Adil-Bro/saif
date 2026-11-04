@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
@@ -61,11 +62,14 @@ import com.saif.mosque.ui.screens.TransfersScreen
 import com.saif.mosque.ui.viewmodel.AuthUiState
 import com.saif.mosque.ui.viewmodel.AuthViewModel
 import com.saif.mosque.util.Permissions
+import com.saif.mosque.util.internetConnectivity
+import com.saif.mosque.ui.components.LocalOfflineMode
+import com.saif.mosque.ui.components.OfflineBanner
 
 @Composable
 fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
     val authVm: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel {
-        AuthViewModel(container.authRepository, container.session)
+        AuthViewModel(container.authRepository, container.session, container.context.internetConnectivity())
     }
     val authState by authVm.state.collectAsStateWithLifecycle()
 
@@ -80,6 +84,7 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
         is AuthUiState.Authed -> androidx.compose.runtime.key(s.user.id, s.user.role, s.user.mosqueId) {
             val nav = rememberNavController()
             val start = if (Permissions.isPlatform(s.user.role)) Screen.Platform.route else Screen.Dashboard.route
+            androidx.compose.runtime.CompositionLocalProvider(LocalOfflineMode provides s.offline) {
             NavHost(nav, start) {
                 composable(Screen.Login.route) { LoginScreen(authVm, isWideScreen) }
                 composable(Screen.Platform.route) { PlatformScreen(container, authVm, s.user) }
@@ -92,6 +97,7 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
                 composable(Screen.Transfers.route) { MosqueShell(nav, s.user, R.string.transfers) { TransfersScreen(container, s.user) } }
                 composable(Screen.Reports.route) { MosqueShell(nav, s.user, R.string.reports) { ReportsScreen(container, s.user) } }
                 composable(Screen.More.route) { MosqueShell(nav, s.user, R.string.more) { MoreScreen(nav, container, authVm, s.user) } }
+            }
             }
         }
     }
@@ -150,6 +156,7 @@ fun MosqueShell(
                 modifier = Modifier.weight(1f),
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {
+                    Column {
                     TopAppBar(
                         title = { Text(stringResource(titleRes), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
@@ -161,6 +168,8 @@ fun MosqueShell(
                             containerColor = MaterialTheme.colorScheme.background,
                             titleContentColor = MaterialTheme.colorScheme.onBackground)
                     )
+                    if (LocalOfflineMode.current) OfflineBanner()
+                    }
                 },
                 bottomBar = {
                     if (!wide) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {

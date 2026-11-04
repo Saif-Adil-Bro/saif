@@ -11,12 +11,18 @@ import com.saif.mosque.data.model.Role
 import com.saif.mosque.data.repository.AuthException
 import com.saif.mosque.data.repository.AuthRepository
 import com.saif.mosque.util.Msg
+import com.saif.mosque.util.OfflineSessionPolicy
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -25,11 +31,15 @@ import kotlinx.coroutines.launch
 sealed interface AuthUiState {
     data object Loading : AuthUiState
     data object Guest : AuthUiState
-    data class Authed(val user: AppUser) : AuthUiState
+    data class Authed(val user: AppUser, val offline: Boolean = false) : AuthUiState
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-class AuthViewModel(private val repo: AuthRepository, private val session: SessionManager) : ViewModel() {
+class AuthViewModel(
+    private val repo: AuthRepository,
+    private val session: SessionManager,
+    private val connectivity: kotlinx.coroutines.flow.Flow<Boolean>
+) : ViewModel() {
     private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Loading)
     val state: StateFlow<AuthUiState> = _state
     private val _messages = Channel<Msg>(Channel.BUFFERED)
@@ -43,38 +53,75 @@ class AuthViewModel(private val repo: AuthRepository, private val session: Sessi
 
     init {
         viewModelScope.launch {
-            repo.authState.distinctUntilChangedBy { it?.uid }.collectLatest { fb ->
-                if (fb == null) {
-                    session.clear()
-                    _state.value = AuthUiState.Guest
-                } else {
-                    _state.value = AuthUiState.Loading
-                    val result = repo.refreshProfile()
-                    if (result.isFailure) {
+            combine(repo.authState.distinctUntilChangedBy { it?.uid }, connectivity) { fb, online -> fb to online }
+                .collectLatest { (fb, online) ->
+                    if (fb == null) {
+                        session.clear()
                         _state.value = AuthUiState.Guest
-                        val e = result.exceptionOrNull()
-                        _messages.trySend(if (e is AuthException) Msg.Res(e.resId)
-                            else Msg.Res(com.saif.mosque.R.string.network_error))
-                        repo.logout()
-                    } else {
-                        try {
-                            repo.watchProfile(fb.uid).flatMapLatest { user ->
-                                when {
-                                    user == null || !user.active -> flowOf(null)
-                                    user.role == Role.SUPERADMIN -> flowOf(user)
-                                    user.mosqueId == null -> flowOf(null)
-                                    else -> repo.watchMosqueActive(user.mosqueId).map { active -> if (active) user else null }
+                        return@collectLatest
+                    }
+                    if (!online) {
+                        openCachedSession(fb.uid)
+                        return@collectLatest
+                    }
+                    // A temporary Firebase outage is not the same as account revocation.
+                    // Keep a matching cached session read-only and retry validation.
+                    while (true) {
+                        val result = repo.refreshProfile()
+                        if (result.isSuccess) {
+                            try {
+                                repo.watchProfile(fb.uid).flatMapLatest { user ->
+                                    when {
+                                        user == null || !user.active -> flowOf(null)
+                                        user.role == Role.SUPERADMIN -> flowOf(user)
+                                        user.mosqueId == null -> flowOf(null)
+                                        else -> repo.watchMosqueActive(user.mosqueId).map { active -> if (active) user else null }
+                                    }
+                                }.collect { user ->
+                                    if (user == null) repo.logout()
+                                    else { session.saveUser(user); _state.value = AuthUiState.Authed(user) }
                                 }
-                            }.collect { user ->
-                                if (user == null) repo.logout()
-                                else { session.saveUser(user); _state.value = AuthUiState.Authed(user) }
+                            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                                if (!isTemporaryFailure(e)) { repo.logout(); return@collectLatest }
+                                openCachedSession(fb.uid)
+                                delay(15_000)
+                                continue
                             }
-                        } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { repo.logout() }
+                            return@collectLatest
+                        }
+                        val error = result.exceptionOrNull()
+                        if (error != null && isTemporaryFailure(error)) {
+                            openCachedSession(fb.uid)
+                            delay(15_000)
+                        } else {
+                            _state.value = AuthUiState.Guest
+                            _messages.trySend(if (error is AuthException) Msg.Res(error.resId)
+                                else Msg.Res(com.saif.mosque.R.string.network_error))
+                            repo.logout()
+                            return@collectLatest
+                        }
                     }
                 }
-            }
         }
     }
+
+    private suspend fun openCachedSession(uid: String) {
+        val cached = session.userFlow.first()
+        if (OfflineSessionPolicy.mayOpen(uid, cached)) {
+            _state.value = AuthUiState.Authed(cached!!, offline = true)
+        } else {
+            // No verified cache: do not silently grant access, and keep the Firebase
+            // session so it can be validated when connectivity returns.
+            _state.value = AuthUiState.Guest
+            _messages.trySend(Msg.Res(com.saif.mosque.R.string.offline_login_required))
+        }
+    }
+
+    private fun isTemporaryFailure(error: Throwable): Boolean =
+        error is FirebaseNetworkException ||
+            (error is FirebaseFirestoreException && error.code in setOf(
+                FirebaseFirestoreException.Code.UNAVAILABLE,
+                FirebaseFirestoreException.Code.DEADLINE_EXCEEDED))
 
     fun login(email: String, password: String) {
         if (busy) return

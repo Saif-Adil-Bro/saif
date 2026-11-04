@@ -10,6 +10,50 @@ service cloud.firestore {
     function activeTenant(mosqueId) {
       return sameTenant(mosqueId) && get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true;
     }
+    function canDirectory(mosqueId, kind) {
+      return (platform() || (activeTenant(mosqueId) &&
+        (me().role in ['ADMIN', 'SECRETARY', 'TREASURER'] ||
+          (kind == 'donors' && me().role == 'CASHIER')))) &&
+        get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true;
+    }
+    function shortText(value, required) {
+      return value is string && value.size() <= 1000 && (!required || value.size() > 0);
+    }
+    function directoryFields(data, kind) {
+      return shortText(data.name, true) && data.active is bool &&
+        (kind == 'funds'
+          ? shortText(data.code, true) && shortText(data.get('nameEn', ''), false) && shortText(data.get('description', ''), false)
+          : shortText(data.get('phone', ''), false) && shortText(data.get('address', ''), false));
+    }
+    function counterCreate(mosqueId, kind) {
+      let data = request.resource.data;
+      let counter = kind == 'funds' ? 'fundCount' : 'donorCount';
+      let path = /databases/$(database)/documents/mosques/$(mosqueId)/$(kind)/$(data.directoryOpId);
+      return canDirectory(mosqueId, kind) &&
+        data.diff(resource.data).affectedKeys().hasOnly([counter, 'directoryOpId', 'directoryOpKind']) &&
+        data.directoryOpId is string && data.directoryOpId.size() > 0 &&
+        data.directoryOpKind == kind && resource.data[counter] is int &&
+        data[counter] == resource.data[counter] + 1 &&
+        !exists(path) && existsAfter(path) && getAfter(path).data.mosqueId == mosqueId;
+    }
+    function directoryCreate(mosqueId, kind, docId) {
+      let data = request.resource.data;
+      let mosque = /databases/$(database)/documents/mosques/$(mosqueId);
+      let counter = kind == 'funds' ? 'fundCount' : 'donorCount';
+      return canDirectory(mosqueId, kind) && data.mosqueId == mosqueId && directoryFields(data, kind) &&
+        (kind == 'funds'
+          ? data.keys().hasOnly(['mosqueId', 'name', 'code', 'nameEn', 'description', 'active', 'balance']) && data.balance == 0
+          : data.keys().hasOnly(['mosqueId', 'name', 'phone', 'address', 'active', 'totalDonated', 'createdAt']) && data.totalDonated == 0 && data.createdAt is int) &&
+        getAfter(mosque).data.directoryOpId == docId && getAfter(mosque).data.directoryOpKind == kind &&
+        getAfter(mosque).data[counter] == get(mosque).data[counter] + 1;
+    }
+    function directoryUpdate(mosqueId, kind) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return canDirectory(mosqueId, kind) && resource.data.mosqueId == mosqueId &&
+        directoryFields(request.resource.data, kind) &&
+        changed.hasOnly(kind == 'funds' ? ['name', 'code', 'nameEn', 'description', 'active'] : ['name', 'phone', 'address', 'active']) &&
+        (kind != 'donors' || !changed.hasAny(['active']) || request.resource.data.active == true || canDirectory(mosqueId, 'funds'));
+    }
     match /users/{uid} {
       // Self-read permits login to report an inactive profile; tenant queries must
       // constrain mosqueId and cannot read profiles from a different tenant.
@@ -20,16 +64,19 @@ service cloud.firestore {
       // Members may read their own inactive mosque to receive the correct login error.
       allow read: if platform() || sameTenant(mosqueId);
       allow create, delete: if false;
-      allow update: if platform()
+      allow update: if (platform()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
           'establishedYear', 'registrationNo', 'active'
         ])
-        && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true);
+        && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
+        || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors');
       match /{collection}/{doc} {
         allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers']
           && (platform() || activeTenant(mosqueId));
-        allow write: if false;
+        allow create: if collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc);
+        allow update: if collection in ['funds', 'donors'] && directoryUpdate(mosqueId, collection);
+        allow delete: if false;
       }
     }
   }

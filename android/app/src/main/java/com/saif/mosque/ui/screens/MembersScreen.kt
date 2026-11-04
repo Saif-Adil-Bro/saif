@@ -136,6 +136,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
     val vm: MembersViewModel = viewModel {
         MembersViewModel(container.ledgerRepository, container.authRepository, mosqueId, user)
     }
+    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -155,7 +156,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (vm.canEdit) FloatingActionButton(onClick = { editing = AppUser() }) {
+            if (canEdit) FloatingActionButton(onClick = { editing = AppUser() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_member))
             }
         },
@@ -176,8 +177,8 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
                             supporting = listOf(m.email, roleLabel(m.role), m.designation)
                                 .filter { it.isNotBlank() }.joinToString(" · "),
                             status = if (!m.active) stringResource(R.string.inactive) else null,
-                            onEdit = if (vm.canEdit) ({ editing = m }) else null,
-                            onDelete = if (vm.canEdit && m.id != user.id) ({ deleting = m }) else null)
+                            onEdit = if (canEdit) ({ editing = m }) else null,
+                            onDelete = if (canEdit && m.id != user.id) ({ deleting = m }) else null)
                     }
                 }
             }
@@ -202,7 +203,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
     }
     deleting?.let { m ->
         ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_member_q),
-            onConfirm = { vm.delete(m) }, onDismiss = { deleting = null })
+            onConfirm = { vm.delete(m) }, onDismiss = { deleting = null }, enabled = canEdit)
     }
 }
 
@@ -251,7 +252,7 @@ private fun MemberFormDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 attempted = true
                 if (Validators.required(name) != null ||
                     (isNew && (Validators.email(email) != null || Validators.password(password) != null))) {

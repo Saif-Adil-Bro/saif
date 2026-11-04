@@ -59,6 +59,7 @@ raw JSON in the `GOOGLE_SERVICES_JSON` repository secret to build a debug APK.
 The shared components include Android Studio previews for compact phones, large text,
 and tablets. With an Android device or emulator connected, run
 `gradle connectedDebugAndroidTest` from `android/` for the responsive component tests.
+Run `gradle testDebugUnitTest` for the local offline-session policy tests.
 Also verify the full app manually at 320 dp and tablet widths, with increased font
 size, the keyboard open, both languages, and real Firebase data.
 
@@ -66,11 +67,25 @@ Server unit tests: `cd android/functions && npm ci && npm test`. The in-memory
 transaction tests cover arithmetic and some authorization cases, but **do not
 replace Firestore Emulator rules/integration tests** or device testing.
 
+## Spark plan status
+
+Fund and donor directory operations have a proposed direct Firestore implementation
+and matching rules, but these changes are not yet emulator- or device-verified.
+Ledger operations and account provisioning still require the deployed callable
+Cloud Function, so the app is **not yet compatible with Spark-only production deployment**. A safe migration
+requires client transaction changes, matching Firestore rules, and provisioning
+changes. Offline-first creation/editing and automatic synchronization also remain
+unimplemented. The emulator security baseline and migration acceptance criteria are in
+[`android/rules-tests/README.md`](android/rules-tests/README.md). Do not switch a
+production project to permissive rules as a workaround.
+
 ## Security and accounting behavior
 
 - Firestore rules permit users to read their own profile and active tenant data;
   tenant queries must filter by `mosqueId`. Direct writes to users and ledger
-  collections are denied. Platform admins may edit only mosque metadata/status.
+  collections are denied. Fund/donor metadata changes are constrained by role;
+  creation uses a paired counter update, and financial fields cannot be changed
+  by these directory rules. Platform admins may edit only mosque metadata/status.
 - Callable functions re-check active user, role and mosque status, perform ledger
   mutations in Firestore transactions, use persisted records instead of trusting
   old client data, reject stale edits and insufficient balances, and maintain donor
@@ -85,8 +100,12 @@ replace Firestore Emulator rules/integration tests** or device testing.
   mean the server committed the operation but the response was lost. Request-level
   idempotency and audit logging are not yet implemented.
 - Callable writes require an internet connection and successful Functions deployment.
-  Firestore reads may use its local cache, but the initial session is validated
-  against the server. Role/active changes are observed while signed in.
+  A previously server-verified Firebase session can open cached data in read-only
+  mode while offline, only when the cached profile matches the current Firebase UID.
+  Cached data may be incomplete or stale, and a remote revocation cannot be known
+  until connectivity returns. The app revalidates the session when online.
+  Offline writes, a durable queue and automatic synchronization are not implemented;
+  do not treat offline edits as saved. Role/active changes are observed online.
 - **Existing data is not automatically repaired.** Before enabling writes, back up
   and reconcile each fund balance, mosque total, donor totals and counters against
   the historical records. Prior bugs may have caused discrepancies that cannot be

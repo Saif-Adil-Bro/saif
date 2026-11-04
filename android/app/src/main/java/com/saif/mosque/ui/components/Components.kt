@@ -316,14 +316,15 @@ fun ConfirmDialog(
     message: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
-    confirmLabel: String = stringResource(R.string.delete)
+    confirmLabel: String = stringResource(R.string.delete),
+    enabled: Boolean = true
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
-            TextButton(onClick = { onConfirm(); onDismiss() }) {
+            TextButton(enabled = enabled, onClick = { onConfirm(); onDismiss() }) {
                 Text(confirmLabel, color = MaterialTheme.colorScheme.error)
             }
         },

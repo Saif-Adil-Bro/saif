@@ -102,6 +102,8 @@ class DonorsViewModel(
 fun DonorsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
     val vm: DonorsViewModel = viewModel { DonorsViewModel(container.ledgerRepository, mosqueId, user) }
+    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canDelete = vm.canDelete && !com.saif.mosque.ui.components.LocalOfflineMode.current
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -122,7 +124,7 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (vm.canEdit) FloatingActionButton(onClick = { editing = Donor() }) {
+            if (canEdit) FloatingActionButton(onClick = { editing = Donor() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_donor))
             }
         },
@@ -152,8 +154,8 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
                         amount = Format.money(d.totalDonated), amountLabel = stringResource(R.string.total_donated),
                         amountColor = MaterialTheme.colorScheme.primary,
                         status = if (!d.active) stringResource(R.string.inactive) else null,
-                        onEdit = if (vm.canEdit) ({ editing = d }) else null,
-                        onDelete = if (vm.canDelete && d.active) ({ deleting = d }) else null,
+                        onEdit = if (canEdit) ({ editing = d }) else null,
+                        onDelete = if (canDelete && d.active) ({ deleting = d }) else null,
                         archive = true, deleteLabel = stringResource(R.string.archive))
                 }
             }
@@ -174,7 +176,7 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
     deleting?.let { d ->
         ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.archive_donor_q),
             onConfirm = { vm.delete(d) }, onDismiss = { deleting = null },
-            confirmLabel = stringResource(R.string.archive))
+            confirmLabel = stringResource(R.string.archive), enabled = canDelete)
     }
 }
 
@@ -209,7 +211,7 @@ private fun DonorFormDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 if (Validators.required(name) != null) { error = "required"; return@TextButton }
                 if (Validators.bdPhone(phone) != null) return@TextButton
                 onSave(initial.copy(name = name.trim(), phone = phone.trim(),

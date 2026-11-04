@@ -146,6 +146,7 @@ class PlatformViewModel(private val repo: PlatformRepository) : ViewModel() {
 fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser) {
     val vm: PlatformViewModel = viewModel { PlatformViewModel(container.platformRepository) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
 
@@ -166,6 +167,7 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
 
     Scaffold(
         topBar = {
+            Column {
             TopAppBar(
                 title = { Text(stringResource(R.string.platform_console)) },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -178,9 +180,11 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
                     }
                 }
             )
+            if (offline) com.saif.mosque.ui.components.OfflineBanner()
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = Mosque() }) {
+            if (!offline) FloatingActionButton(onClick = { editing = Mosque() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.new_mosque))
             }
         },
@@ -232,6 +236,7 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
                 items(filtered, key = { it.id }) { m ->
                     MosqueCard(
                         mosque = m,
+                        canEdit = !offline,
                         onEdit = { editing = m },
                         onToggle = { active ->
                             if (active) vm.setActive(m, true)
@@ -281,7 +286,7 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
             message = stringResource(R.string.mosque_deactivated_warn),
             onConfirm = { vm.setActive(m, false) },
             onDismiss = { pendingDeactivate = null },
-            confirmLabel = stringResource(R.string.deactivate)
+            confirmLabel = stringResource(R.string.deactivate), enabled = !offline
         )
     }
 }
@@ -291,7 +296,7 @@ private enum class Filter(val labelRes: Int) {
 }
 
 @Composable
-private fun MosqueCard(mosque: Mosque, onEdit: () -> Unit, onToggle: (Boolean) -> Unit) {
+private fun MosqueCard(mosque: Mosque, canEdit: Boolean, onEdit: () -> Unit, onToggle: (Boolean) -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -304,7 +309,7 @@ private fun MosqueCard(mosque: Mosque, onEdit: () -> Unit, onToggle: (Boolean) -
                     if (location.isNotBlank()) Text(location, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = onEdit) {
+                if (canEdit) IconButton(onClick = onEdit) {
                     Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.edit),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -320,7 +325,7 @@ private fun MosqueCard(mosque: Mosque, onEdit: () -> Unit, onToggle: (Boolean) -
                 Text(stringResource(if (mosque.active) R.string.active else R.string.inactive),
                     Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
                     color = if (mosque.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
-                Switch(checked = mosque.active, onCheckedChange = { onToggle(it) },
+                Switch(checked = mosque.active, onCheckedChange = { onToggle(it) }, enabled = canEdit,
                     modifier = Modifier.semantics { contentDescription = mosque.name })
             }
         }
@@ -374,7 +379,7 @@ private fun MosqueFormDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 val nameErr = Validators.required(name)
                 if (isNew) {
                     if (nameErr != null || Validators.required(adminName) != null ||

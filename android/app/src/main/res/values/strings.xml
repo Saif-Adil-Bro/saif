@@ -228,4 +228,6 @@
     <string name="profile">Profile</string>
     <string name="you">You</string>
     <string name="admin_details">Admin details</string>
+    <string name="offline_read_only">Offline: showing cached data, which may be incomplete. Changes cannot be saved yet.</string>
+    <string name="offline_login_required">Connect to the internet to verify your account before using the app.</string>
 </resources>

@@ -105,6 +105,7 @@ class FundsViewModel(
 fun FundsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
     val vm: FundsViewModel = viewModel { FundsViewModel(container.ledgerRepository, mosqueId, user) }
+    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -124,7 +125,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (vm.canEdit) FloatingActionButton(onClick = { editing = Fund() }) {
+            if (canEdit) FloatingActionButton(onClick = { editing = Fund() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_fund))
             }
         },
@@ -144,8 +145,8 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
                             title = "${fund.code} · ${fund.name}", supporting = fund.nameEn,
                             amount = Format.money(fund.balance), amountLabel = stringResource(R.string.balance),
                             status = if (!fund.active) stringResource(R.string.inactive) else null,
-                            onEdit = if (vm.canEdit) ({ editing = fund }) else null,
-                            onDelete = if (vm.canEdit && fund.active) ({ deleting = fund }) else null,
+                            onEdit = if (canEdit) ({ editing = fund }) else null,
+                            onDelete = if (canEdit && fund.active) ({ deleting = fund }) else null,
                             archive = true, deleteLabel = stringResource(R.string.archive))
                     }
                 }
@@ -171,7 +172,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
             message = stringResource(R.string.delete_fund_q),
             onConfirm = { vm.delete(fund) },
             onDismiss = { deleting = null },
-            confirmLabel = stringResource(R.string.archive)
+            confirmLabel = stringResource(R.string.archive), enabled = canEdit
         )
     }
 }
@@ -208,7 +209,7 @@ private fun FundFormDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 if (Validators.required(name) != null || Validators.required(code) != null) {
                     error = "required"; return@TextButton
                 }
