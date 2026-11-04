@@ -2,8 +2,14 @@ package com.saif.mosque.data.repository
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.saif.mosque.data.SessionManager
+import com.saif.mosque.data.model.Contribution
 import com.saif.mosque.data.model.DashboardData
+import com.saif.mosque.data.model.Donor
+import com.saif.mosque.data.model.Expense
+import com.saif.mosque.data.model.Fund
+import com.saif.mosque.data.model.Mosque
 import com.saif.mosque.data.model.RecentTx
+import com.saif.mosque.data.model.Transfer
 import com.saif.mosque.util.Format
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -20,13 +26,26 @@ class DashboardRepository(
         val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", year, month)
 
         return combine(
-            ledger.observeFunds(mosqueId),
-            ledger.observeContributions(mosqueId),
-            ledger.observeExpenses(mosqueId),
-            ledger.observeDonors(mosqueId),
-            ledger.observeTransfers(mosqueId),
-            ledger.observeMosque(mosqueId)
-        ) { funds, contributions, expenses, donors, transfers, mosque ->
+            listOf(
+                ledger.observeFunds(mosqueId),
+                ledger.observeContributions(mosqueId),
+                ledger.observeExpenses(mosqueId),
+                ledger.observeDonors(mosqueId),
+                ledger.observeTransfers(mosqueId),
+                ledger.observeMosque(mosqueId)
+            )
+        ) { arr ->
+            @Suppress("UNCHECKED_CAST")
+            val funds = arr[0] as List<Fund>
+            @Suppress("UNCHECKED_CAST")
+            val contributions = arr[1] as List<Contribution>
+            @Suppress("UNCHECKED_CAST")
+            val expenses = arr[2] as List<Expense>
+            @Suppress("UNCHECKED_CAST")
+            val donors = arr[3] as List<Donor>
+            @Suppress("UNCHECKED_CAST")
+            val transfers = arr[4] as List<Transfer>
+            val mosque = arr[5] as Mosque?
             val monthContrib = contributions.filter { it.date.startsWith(monthPrefix) }
             val monthExpense = expenses.filter { it.date.startsWith(monthPrefix) }
 

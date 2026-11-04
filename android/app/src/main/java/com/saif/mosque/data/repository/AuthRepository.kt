@@ -150,11 +150,13 @@ class AuthRepository(
         }
     }
 
-    /** Secure random temporary password (spec 1.8). */
-    fun generateTempPassword(length: Int = 12): String {
-        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#\$%"
-        val rnd = SecureRandom()
-        return (1..length).map { chars[rnd.nextInt(chars.length)] }.joinToString("")
+    companion object {
+        /** Secure random temporary password (spec 1.8). */
+        fun generateTempPassword(length: Int = 12): String {
+            val chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#\$%"
+            val rnd = SecureRandom()
+            return (1..length).map { chars[rnd.nextInt(chars.length)] }.joinToString("")
+        }
     }
 }
 

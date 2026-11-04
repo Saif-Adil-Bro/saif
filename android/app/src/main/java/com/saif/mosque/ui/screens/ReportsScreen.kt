@@ -192,9 +192,3 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
         }
     }
 }
-
-// small helper: collect a flow as state without lifecycle import gymnastics
-@Composable
-private fun <T> kotlinx.coroutines.flow.Flow<T>.collectAsStateWithLifecycleSafe(): T {
-    return androidx.lifecycle.compose.collectAsStateWithLifecycle().value
-}
