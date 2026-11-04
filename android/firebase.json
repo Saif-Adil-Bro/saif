@@ -1,0 +1,9 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "android": {
+    "googleServicesFile": "app/google-services.json"
+  }
+}
