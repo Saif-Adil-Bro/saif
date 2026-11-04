@@ -48,6 +48,10 @@ android/                  ← open this folder in Android Studio (or run gradle 
    firebase deploy --only firestore:rules,firestore:indexes   # requires Firebase CLI
    ```
    (or paste `firestore.rules` into the console).
+   Note: `firestore.indexes.json` is intentionally **empty** — every query in the app
+   uses a single field (`date`, `name`, `mosqueId`), and Firestore auto-creates
+   single-field indexes, so deploying them returns HTTP 400 "index is not necessary".
+   Add an entry here only when a composite (multi-field) index is needed.
 4. Seed the demo accounts + demo mosque automatically (recommended, idempotent):
    ```
    cd android/scripts
