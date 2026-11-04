@@ -54,11 +54,50 @@ service cloud.firestore {
         changed.hasOnly(kind == 'funds' ? ['name', 'code', 'nameEn', 'description', 'active'] : ['name', 'phone', 'address', 'active']) &&
         (kind != 'donors' || !changed.hasAny(['active']) || request.resource.data.active == true || canDirectory(mosqueId, 'funds'));
     }
+    function canManageMember(mosqueId, target) {
+      return (platform() || (activeTenant(mosqueId) &&
+        me().role in ['ADMIN', 'PRESIDENT', 'SECRETARY'])) &&
+        get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true &&
+        target.mosqueId == mosqueId && target.role != 'SUPERADMIN' &&
+        (target.role != 'ADMIN' || platform() || me().role == 'ADMIN');
+    }
+    function memberUpdate(uid) {
+      let old = resource.data;
+      let next = request.resource.data;
+      return canManageMember(old.mosqueId, old) &&
+        next.diff(old).affectedKeys().hasOnly(['name', 'phone', 'designation', 'role', 'active']) &&
+        shortText(next.name, true) && shortText(next.get('phone', ''), false) &&
+        shortText(next.get('designation', ''), false) && next.active is bool &&
+        next.role in ['ADMIN', 'PRESIDENT', 'SECRETARY', 'TREASURER', 'CASHIER', 'IMAM', 'MEMBER'] &&
+        (next.role != 'ADMIN' || platform() || me().role == 'ADMIN') &&
+        (uid != request.auth.uid || (next.role == old.role && next.active == old.active));
+    }
+    function memberCounterDelete(mosqueId) {
+      let next = request.resource.data;
+      let target = /databases/$(database)/documents/users/$(next.memberOpId);
+      return next.memberOpId is string && next.memberOpId.size() > 0 &&
+        next.memberOpId != request.auth.uid &&
+        next.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'memberOpId']) &&
+        resource.data.memberCount is int && resource.data.memberCount > 0 &&
+        next.memberCount == resource.data.memberCount - 1 &&
+        exists(target) && canManageMember(mosqueId, get(target).data) && !existsAfter(target);
+    }
+    function memberDelete(uid) {
+      let mosqueId = resource.data.mosqueId;
+      let mosque = /databases/$(database)/documents/mosques/$(mosqueId);
+      return uid != request.auth.uid && canManageMember(mosqueId, resource.data) &&
+        getAfter(mosque).data.memberOpId == uid &&
+        get(mosque).data.memberCount is int && get(mosque).data.memberCount > 0 &&
+        getAfter(mosque).data.memberCount == get(mosque).data.memberCount - 1;
+    }
     match /users/{uid} {
       // Self-read permits login to report an inactive profile; tenant queries must
       // constrain mosqueId and cannot read profiles from a different tenant.
       allow read: if signedIn() && (request.auth.uid == uid || platform() || activeTenant(resource.data.mosqueId));
-      allow write: if false; // privileged mutations use the Admin SDK
+      // Creation still requires the trusted provisioning workflow.
+      allow create: if false;
+      allow update: if signedIn() && memberUpdate(uid);
+      allow delete: if signedIn() && memberDelete(uid);
     }
     match /mosques/{mosqueId} {
       // Members may read their own inactive mosque to receive the correct login error.
@@ -70,7 +109,8 @@ service cloud.firestore {
           'establishedYear', 'registrationNo', 'active'
         ])
         && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
-        || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors');
+        || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
+        || memberCounterDelete(mosqueId);
       match /{collection}/{doc} {
         allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers']
           && (platform() || activeTenant(mosqueId));

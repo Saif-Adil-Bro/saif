@@ -69,7 +69,7 @@ class LedgerRepository(
     fun observeMosque(mosqueId: String): Flow<Mosque?> =
         mosqueRef(mosqueId).snapshotsFlow().map { it.toObject(Mosque::class.java) }
 
-    // All mutations run on the trusted backend; direct Firestore writes are denied.
+    // Ledger mutations still require the trusted backend; direct ledger writes are denied.
     private suspend fun mutate(kind: String, action: String, mosqueId: String,
                                id: String? = null, value: Any? = null, expected: Any? = null) {
         val data = mutableMapOf<String, Any>("operation" to if (kind in setOf("funds", "donors", "members")) "directory" else "ledger",
@@ -141,11 +141,20 @@ class LedgerRepository(
 
     suspend fun updateMember(mosqueId: String, member: AppUser, editor: AppUser) {
         if (member.id == editor.id && !member.active) throw SelfActionException()
-        mutate("members", "update", mosqueId, member.id, member)
+        db.collection("users").document(member.id).update(mapOf(
+            "name" to member.name.trim(), "phone" to member.phone.trim(),
+            "designation" to member.designation.trim(), "role" to member.role.name,
+            "active" to member.active
+        )).await()
     }
     suspend fun deleteMember(mosqueId: String, memberId: String, editor: AppUser) {
         if (memberId == editor.id) throw SelfActionException()
-        mutate("members", "delete", mosqueId, memberId)
+        val member = db.collection("users").document(memberId)
+        // The rules require a corresponding deletion and decrement in the same batch.
+        db.batch().delete(member).update(mosqueRef(mosqueId), mapOf(
+            "memberCount" to com.google.firebase.firestore.FieldValue.increment(-1),
+            "memberOpId" to memberId
+        )).commit().await()
     }
 
     // ---------- month queries (reports) ----------

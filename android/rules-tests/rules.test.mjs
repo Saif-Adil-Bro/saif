@@ -20,14 +20,16 @@ beforeEach(async () => {
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
     await Promise.all([
-      setDoc(doc(db, 'users/admin-a'), { role: 'ADMIN', mosqueId: 'a', active: true }),
+      setDoc(doc(db, 'users/admin-a'), { name: 'Admin', phone: '', designation: '', role: 'ADMIN', mosqueId: 'a', active: true }),
       setDoc(doc(db, 'users/cashier-a'), { role: 'CASHIER', mosqueId: 'a', active: true }),
       setDoc(doc(db, 'users/disabled-a'), { role: 'ADMIN', mosqueId: 'a', active: false }),
-      setDoc(doc(db, 'users/member-a'), { role: 'MEMBER', mosqueId: 'a', active: true }),
+      setDoc(doc(db, 'users/member-a'), { name: 'Member', phone: '', designation: '', role: 'MEMBER', mosqueId: 'a', active: true }),
+      setDoc(doc(db, 'users/secretary-a'), { name: 'Secretary', phone: '', designation: '', role: 'SECRETARY', mosqueId: 'a', active: true }),
+      setDoc(doc(db, 'users/admin2-a'), { name: 'Second Admin', phone: '', designation: '', role: 'ADMIN', mosqueId: 'a', active: true }),
       setDoc(doc(db, 'users/admin-b'), { role: 'ADMIN', mosqueId: 'b', active: true }),
       setDoc(doc(db, 'users/platform'), { role: 'SUPERADMIN', mosqueId: null, active: true }),
-      setDoc(doc(db, 'mosques/a'), { name: 'A', active: true, totalBalance: 100, fundCount: 1, donorCount: 0 }),
-      setDoc(doc(db, 'mosques/b'), { name: 'B', active: true, totalBalance: 200, fundCount: 1, donorCount: 0 }),
+      setDoc(doc(db, 'mosques/a'), { name: 'A', active: true, totalBalance: 100, fundCount: 1, donorCount: 0, memberCount: 6 }),
+      setDoc(doc(db, 'mosques/b'), { name: 'B', active: true, totalBalance: 200, fundCount: 1, donorCount: 0, memberCount: 1 }),
       setDoc(doc(db, 'mosques/a/funds/general'), { name: 'General', code: 'GEN', active: true, balance: 100, mosqueId: 'a' }),
       setDoc(doc(db, 'mosques/b/funds/general'), { name: 'General', balance: 200, mosqueId: 'b' }),
     ]);
@@ -158,4 +160,52 @@ test('revoking a role or deactivating a mosque immediately prevents subsequent w
     await updateDoc(doc(context.firestore(), 'mosques/a'), { active: false });
   });
   await assertFails(createDirectory(db, 'donors', 'tenant-inactive', donor()));
+});
+
+function deleteMember(db, id, mosque = 'a') {
+  const b = writeBatch(db);
+  b.delete(doc(db, `users/${id}`));
+  b.update(doc(db, `mosques/${mosque}`), { memberCount: increment(-1), memberOpId: id });
+  return b.commit();
+}
+
+test('authorized staff can update a member, but cannot alter identity or tenant', async () => {
+  const secretary = dbFor('secretary-a'), member = doc(secretary, 'users/member-a');
+  await assertSucceeds(updateDoc(member, { name: 'Changed', role: 'TREASURER', active: true }));
+  await assertFails(updateDoc(member, { mosqueId: 'b' }));
+  await assertFails(updateDoc(member, { email: 'forged@example.com' }));
+  await assertFails(updateDoc(member, { role: 'SUPERADMIN' }));
+  await assertFails(updateDoc(member, { role: 'ADMIN' }));
+  await assertFails(updateDoc(doc(secretary, 'users/admin2-a'), { role: 'MEMBER' }));
+  await assertFails(updateDoc(doc(dbFor('admin-b'), 'users/member-a'), { name: 'Cross tenant' }));
+  await assertFails(updateDoc(doc(dbFor('member-a'), 'users/member-a'), { name: 'Self' }));
+});
+
+test('admin can promote members but cannot deactivate or change their own role', async () => {
+  const db = dbFor('admin-a');
+  await assertSucceeds(updateDoc(doc(db, 'users/member-a'), { role: 'ADMIN' }));
+  await assertFails(updateDoc(doc(db, 'users/admin-a'), { role: 'MEMBER' }));
+  await assertFails(updateDoc(doc(db, 'users/admin-a'), { active: false }));
+});
+
+test('member deletion and counter decrement must be paired and respect permissions', async () => {
+  const admin = dbFor('admin-a'), secretary = dbFor('secretary-a');
+  await assertFails(deleteMember(admin, 'admin-a'));
+  await assertFails(deleteMember(secretary, 'admin2-a'));
+  await assertFails(deleteMember(dbFor('admin-b'), 'member-a'));
+  await assertFails(updateDoc(doc(admin, 'mosques/a'), { memberCount: increment(-1), memberOpId: 'member-a' }));
+  const noCounter = writeBatch(admin); noCounter.delete(doc(admin, 'users/member-a'));
+  await assertFails(noCounter.commit());
+  await assertSucceeds(deleteMember(secretary, 'member-a'));
+  if ((await getDoc(doc(admin, 'mosques/a'))).data().memberCount !== 5) throw new Error('Incorrect member count');
+  await assertFails(deleteMember(secretary, 'member-a'));
+});
+
+test('revoked staff cannot update or delete members', async () => {
+  const secretary = dbFor('secretary-a');
+  await env.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'users/secretary-a'), { active: false });
+  });
+  await assertFails(updateDoc(doc(secretary, 'users/member-a'), { name: 'No' }));
+  await assertFails(deleteMember(secretary, 'member-a'));
 });

@@ -69,10 +69,10 @@ replace Firestore Emulator rules/integration tests** or device testing.
 
 ## Spark plan status
 
-Fund and donor directory operations have a proposed direct Firestore implementation
-and matching rules. CI runs the Firestore Emulator security tests, but the
+Fund/donor directory operations and existing-member edits/deletions have a proposed
+Firestore implementation and matching rules. CI runs the Firestore Emulator security tests, but the
 changes have not been tested on an Android device and are not deployed.
-Ledger operations and account provisioning still require the deployed callable
+Ledger operations and new-account provisioning still require the deployed callable
 Cloud Function, so the app is **not yet compatible with Spark-only production deployment**.
 A safe migration
 requires client transaction changes, matching Firestore rules, and provisioning
@@ -84,8 +84,9 @@ production project to permissive rules as a workaround.
 ## Security and accounting behavior
 
 - Firestore rules permit users to read their own profile and active tenant data;
-  tenant queries must filter by `mosqueId`. Direct writes to users and ledger
-  collections are denied. Fund/donor metadata changes are constrained by role;
+  tenant queries must filter by `mosqueId`. Direct ledger writes and user profile
+  creation are denied. Existing-member edits/deletions are restricted by role,
+  tenant and self-protection rules; deletion requires an atomic counter decrement. Fund/donor metadata changes are constrained by role;
   creation uses a paired counter update, and financial fields cannot be changed
   by these directory rules. Platform admins may edit only mosque metadata/status.
 - Callable functions re-check active user, role and mosque status, perform ledger
