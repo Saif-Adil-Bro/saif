@@ -144,3 +144,45 @@ test('prototype entries are append-only: update and delete are forbidden', async
   await assertFails(updateDoc(doc(db,'mosques/a/expenses/e1'), { amountPoisha:1, amount:0.01 }));
   const b=writeBatch(db); b.delete(doc(db,'mosques/a/expenses/e1')); await assertFails(b.commit());
 });
+
+test('canonical fractional taka works; fractional poisha and float drift are rejected', async () => {
+  const db=dbFor('admin');
+  await assertSucceeds(addContribution(db,'c29',contribution('admin',29)));
+  assert.equal((await getDoc(doc(db,'mosques/a/funds/general'))).data().balancePoisha,10029);
+  const b=writeBatch(db), row={...contribution('admin',10),amount:0.10000000000000002};
+  b.set(doc(db,'mosques/a/contributions/float-drift'),row);
+  b.update(doc(db,'mosques/a/funds/general'),fundUpdate(10039,'contributions','float-drift'));
+  b.update(doc(db,'mosques/a'),mosqueUpdate(10039,'contributions','float-drift'));
+  b.update(doc(db,'mosques/a/donors/d'),donorUpdate(39,'float-drift'));
+  await assertFails(b.commit());
+});
+
+test('unmigrated or inconsistent legacy aggregates are rejected', async () => {
+  const db=dbFor('admin');
+  await env.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(),'mosques/a/funds/general'), { balance:101 });
+  });
+  await assertFails(addContribution(db,'inconsistent'));
+  await env.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(),'mosques/a/funds/general'), { mosqueId:'a', active:true, name:'Legacy', balance:100 });
+  });
+  await assertFails(addContribution(db,'unmigrated'));
+});
+
+test('one operation cannot be used to adjust an unrelated fund', async () => {
+  const db=dbFor('admin');
+  const b=writeBatch(db); b.set(doc(db,'mosques/a/contributions/fake'),contribution('admin',100));
+  b.update(doc(db,'mosques/a/funds/general'),fundUpdate(10100,'contributions','fake'));
+  b.update(doc(db,'mosques/a/funds/other'),fundUpdate(100,'contributions','fake'));
+  b.update(doc(db,'mosques/a'),mosqueUpdate(10100,'contributions','fake'));
+  b.update(doc(db,'mosques/a/donors/d'),donorUpdate(100,'fake'));
+  await assertFails(b.commit());
+  assert.equal((await getDoc(doc(db,'mosques/a/funds/other'))).data().balancePoisha,0);
+});
+
+test('anonymous contributions do not require or mutate a donor', async () => {
+  const db=dbFor('admin');
+  await assertSucceeds(addContribution(db,'anonymous',{...contribution('admin',100),donorId:'',donorName:'Anonymous'}));
+  assert.equal((await getDoc(doc(db,'mosques/a/donors/d'))).data().totalDonatedPoisha,0);
+  assert.equal((await getDoc(doc(db,'mosques/a'))).data().totalBalancePoisha,10100);
+});
