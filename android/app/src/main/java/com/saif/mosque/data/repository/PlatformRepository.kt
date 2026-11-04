@@ -37,7 +37,7 @@ class PlatformRepository(private val db: FirebaseFirestore) {
                     "operation" to "createMosque", "value" to callableMap(mosque),
                     "admin" to mapOf("name" to adminName, "email" to adminEmail,
                         "phone" to adminPhone, "password" to tempPassword)
-                )).await().data as Map<*, *>
+                )).await().getData() as Map<*, *>
             Result.success(CreatedMosque(mosque.copy(id = result["id"] as String),
                 adminEmail.trim().lowercase(), tempPassword))
         } catch (ex: Exception) { Result.failure(ex) }

@@ -113,7 +113,7 @@ class AuthRepository(
                 .call(mapOf("operation" to "createMember", "mosqueId" to (currentUser.mosqueId ?: ""),
                     "value" to mapOf("name" to name, "email" to email, "phone" to phone,
                         "role" to role.name, "designation" to designation, "password" to password)))
-                .await().data as Map<*, *>
+                .await().getData() as Map<*, *>
             Result.success(AppUser(id = result["uid"] as String, name = name, email = email,
                 phone = phone, role = role, mosqueId = currentUser.mosqueId, designation = designation))
         } catch (ex: Exception) {
