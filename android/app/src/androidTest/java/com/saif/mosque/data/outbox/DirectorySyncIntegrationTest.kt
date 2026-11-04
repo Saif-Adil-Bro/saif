@@ -13,6 +13,8 @@ import com.saif.mosque.data.model.Donor
 import com.saif.mosque.data.model.Fund
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import org.junit.Assert.assertEquals
@@ -41,8 +43,15 @@ class DirectorySyncIntegrationTest {
         db.disableNetwork().await()
         val first = store.addFund("outbox-a", "sync-test-mosque", Fund(name = "Offline fund", code = "OFF"))
         assertEquals("PENDING", store.find(first.id)?.state)
+        // A disconnected Firestore must not acknowledge or discard the draft.
+        assertEquals(ListenableWorker.Result.retry(), withTimeout(20_000) { sync(first.id) })
+        assertEquals("PENDING", store.find(first.id)?.state)
         db.enableNetwork().await()
-        assertEquals(ListenableWorker.Result.success(), sync(first.id))
+        // Exercise the actual WorkManager scheduling path, not just doWork directly.
+        DirectorySync.schedule(context, first.id)
+        withTimeout(45_000) {
+            while (store.find(first.id) != null) delay(250)
+        }
         assertNull(store.find(first.id))
         val fund = mosque.collection("funds").document(first.id).get(Source.SERVER).await()
         assertEquals(first.id, fund.getString("syncOpId"))
