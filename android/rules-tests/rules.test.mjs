@@ -124,3 +124,38 @@ test('cannot create two documents for a single counter increment', async () => {
   b.update(doc(db, 'mosques/a'), { fundCount: increment(1), directoryOpId: 'x', directoryOpKind: 'funds' });
   await assertFails(b.commit());
 });
+
+test('failed or repeated creation does not alter counters or leave a record', async () => {
+  const db = dbFor('admin-a');
+  await assertFails(createDirectory(db, 'funds', 'bad', { ...fund(), balance: 500 }));
+  if ((await getDoc(doc(db, 'mosques/a/funds/bad'))).exists()) throw new Error('Partial write');
+  if ((await getDoc(doc(db, 'mosques/a'))).data().fundCount !== 1) throw new Error('Counter changed on failure');
+  await assertSucceeds(createDirectory(db, 'funds', 'same', fund()));
+  await assertFails(createDirectory(db, 'funds', 'same', fund()));
+  if ((await getDoc(doc(db, 'mosques/a'))).data().fundCount !== 2) throw new Error('Duplicate counter increment');
+});
+
+test('concurrent directory additions each increment the correct counter once', async () => {
+  const admin = dbFor('admin-a'), cashier = dbFor('cashier-a');
+  await Promise.all([
+    assertSucceeds(createDirectory(admin, 'funds', 'f1', fund())),
+    assertSucceeds(createDirectory(admin, 'funds', 'f2', fund())),
+    assertSucceeds(createDirectory(admin, 'donors', 'd1', donor())),
+    assertSucceeds(createDirectory(cashier, 'donors', 'd2', donor())),
+  ]);
+  const mosque = (await getDoc(doc(admin, 'mosques/a'))).data();
+  if (mosque.fundCount !== 3 || mosque.donorCount !== 2) throw new Error('Incorrect counts after concurrent creation');
+});
+
+test('revoking a role or deactivating a mosque immediately prevents subsequent writes', async () => {
+  const db = dbFor('admin-a');
+  await env.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'users/admin-a'), { role: 'MEMBER' });
+  });
+  await assertFails(createDirectory(db, 'funds', 'role-revoked', fund()));
+  await env.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'users/admin-a'), { role: 'ADMIN' });
+    await updateDoc(doc(context.firestore(), 'mosques/a'), { active: false });
+  });
+  await assertFails(createDirectory(db, 'donors', 'tenant-inactive', donor()));
+});

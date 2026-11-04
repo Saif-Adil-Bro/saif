@@ -70,9 +70,11 @@ replace Firestore Emulator rules/integration tests** or device testing.
 ## Spark plan status
 
 Fund and donor directory operations have a proposed direct Firestore implementation
-and matching rules, but these changes are not yet emulator- or device-verified.
+and matching rules. CI runs the Firestore Emulator security tests, but the
+changes have not been tested on an Android device and are not deployed.
 Ledger operations and account provisioning still require the deployed callable
-Cloud Function, so the app is **not yet compatible with Spark-only production deployment**. A safe migration
+Cloud Function, so the app is **not yet compatible with Spark-only production deployment**.
+A safe migration
 requires client transaction changes, matching Firestore rules, and provisioning
 changes. Offline-first creation/editing and automatic synchronization also remain
 unimplemented. The emulator security baseline and migration acceptance criteria are in
