@@ -116,6 +116,8 @@ class DirectorySyncWorker(context: Context, params: WorkerParameters) : Coroutin
             store.remove(id, draft.uid)
             return Result.success()
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
+            // Signing out or switching accounts is not a rejection of the original user's draft.
+            if (auth.currentUser?.uid != draft.uid) return Result.success()
             // A duplicate retry can lose the race with the first attempt. Verify its receipt before failing.
             if (auth.currentUser?.uid == draft.uid) {
                 try { if (committed()) { store.remove(id, draft.uid); return Result.success() } }
