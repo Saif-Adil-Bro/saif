@@ -1,5 +1,6 @@
 package com.saif.mosque.ui.components
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -29,7 +30,7 @@ fun <T> DropdownField(
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = it },
-        modifier = modifier
+        modifier = modifier.fillMaxWidth()
     ) {
         OutlinedTextField(
             value = display(selected),
@@ -37,7 +38,8 @@ fun <T> DropdownField(
             readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, true)
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+            singleLine = true
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (value, labelText) ->

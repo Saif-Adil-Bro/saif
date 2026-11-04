@@ -15,3 +15,5 @@ app/google-services.json
 scripts/node_modules/
 scripts/serviceAccountKey.json
 scripts/*service-account*.json
+
+functions/node_modules/

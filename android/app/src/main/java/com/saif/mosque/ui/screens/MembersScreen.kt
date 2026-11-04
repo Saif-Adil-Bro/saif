@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -96,22 +98,16 @@ class MembersViewModel(
         }
     }
 
-    fun update(member: AppUser) = mutate {
-        try {
-            ledger.updateMember(mosqueId, member, user)
-        } catch (e: SelfActionException) {
-            _messages.emit(Msg.Res(R.string.cannot_deactivate_self))
-            return@mutate
-        }
+    fun update(member: AppUser) {
+        if (member.id == user.id && !member.active) {
+            viewModelScope.launch { _messages.emit(Msg.Res(R.string.cannot_deactivate_self)) }
+        } else mutate { ledger.updateMember(mosqueId, member, user) }
     }
 
-    fun delete(member: AppUser) = mutate {
-        try {
-            ledger.deleteMember(mosqueId, member.id, user)
-        } catch (e: SelfActionException) {
-            _messages.emit(Msg.Res(R.string.cannot_delete_self))
-            return@mutate
-        }
+    fun delete(member: AppUser) {
+        if (member.id == user.id) {
+            viewModelScope.launch { _messages.emit(Msg.Res(R.string.cannot_delete_self)) }
+        } else mutate { ledger.deleteMember(mosqueId, member.id, user) }
     }
 
     private fun mutate(block: suspend () -> Unit) {
@@ -157,6 +153,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = AppUser() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_member))
@@ -164,40 +161,23 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { members ->
+        StateBox(state) { members ->
             if (members.isEmpty()) {
                 EmptyBox()
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
                     items(members, key = { it.id }) { m ->
-                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface)) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(m.name + if (m.id == user.id) " (you)" else "",
-                                        style = MaterialTheme.typography.bodyLarge)
-                                    Text(m.email, style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        AssistChip(onClick = {}, label = { Text(roleLabel(m.role)) })
-                                        if (m.designation.isNotBlank())
-                                            AssistChip(onClick = {}, label = { Text(m.designation) })
-                                        if (!m.active)
-                                            AssistChip(onClick = {}, label = { Text(stringResource(R.string.inactive)) })
-                                    }
-                                }
-                                if (vm.canEdit) {
-                                    IconButton(onClick = { editing = m }) { Icon(Icons.Filled.Edit, contentDescription = null) }
-                                    if (m.id != user.id) IconButton(onClick = { deleting = m }) {
-                                        Icon(Icons.Filled.Delete, contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                        }
+                        com.saif.mosque.ui.components.RecordCard(
+                            title = m.name + if (m.id == user.id) " · ${stringResource(R.string.you)}" else "",
+                            supporting = listOf(m.email, roleLabel(m.role), m.designation)
+                                .filter { it.isNotBlank() }.joinToString(" · "),
+                            status = if (!m.active) stringResource(R.string.inactive) else null,
+                            onEdit = if (vm.canEdit) ({ editing = m }) else null,
+                            onDelete = if (vm.canEdit && m.id != user.id) ({ deleting = m }) else null)
                     }
                 }
             }
@@ -240,7 +220,7 @@ private fun MemberFormDialog(
     var designation by remember { mutableStateOf(initial.designation) }
     var active by remember { mutableStateOf(initial.active) }
     var password by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var attempted by remember { mutableStateOf(false) }
 
     val roleOptions = listOf(Role.ADMIN, Role.PRESIDENT, Role.SECRETARY, Role.TREASURER,
         Role.CASHIER, Role.IMAM, Role.MEMBER).map { it to roleLabel(it) }
@@ -250,28 +230,32 @@ private fun MemberFormDialog(
         title = { Text(stringResource(if (isNew) R.string.add_member else R.string.edit_member)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LabeledField(stringResource(R.string.name), name, { name = it }, error = error)
+                LabeledField(stringResource(R.string.name), name, { name = it },
+                    error = if (attempted) Validators.required(name) else null)
                 LabeledField(stringResource(R.string.email), email, { email = it },
-                    error = if (isNew) Validators.email(email) else null, keyboardType = KeyboardType.Email,
+                    error = if (isNew && attempted) Validators.email(email) else null, keyboardType = KeyboardType.Email,
                     readOnly = !isNew)
                 LabeledField(stringResource(R.string.phone), phone, { phone = it }, keyboardType = KeyboardType.Phone)
                 DropdownField(stringResource(R.string.role), roleOptions, role, { role = it })
                 LabeledField(stringResource(R.string.designation), designation, { designation = it })
                 if (isNew) {
                     PasswordField(stringResource(R.string.password), password, { password = it },
-                        error = Validators.password(password))
+                        error = if (attempted) Validators.password(password) else null)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!isNew) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
-                    Switch(checked = active, onCheckedChange = { active = it })
+                    val activeLabel = stringResource(R.string.active)
+                    Switch(checked = active, onCheckedChange = { active = it },
+                        modifier = Modifier.semantics { contentDescription = activeLabel })
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                if (Validators.required(name) != null) { error = "required"; return@TextButton }
-                if (isNew && (Validators.email(email) != null || Validators.password(password) != null)) {
-                    error = "required"; return@TextButton
+                attempted = true
+                if (Validators.required(name) != null ||
+                    (isNew && (Validators.email(email) != null || Validators.password(password) != null))) {
+                    return@TextButton
                 }
                 onSave(name.trim(), email.trim(), phone.trim(), role, designation.trim(), active, password)
             }) { Text(stringResource(R.string.save)) }

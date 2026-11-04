@@ -1,89 +1,35 @@
 rules_version = '2';
-// Mosque Account Management System — Firestore Security Rules
-// Multi-tenant: every mosque's data lives under /mosques/{mosqueId}/...
-// Roles live on /users/{uid}.role (client-written only via these rules).
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function signedIn() { return request.auth != null; }
-
-    function userData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function platform() { return signedIn() && me().active == true && me().role == 'SUPERADMIN'; }
+    function sameTenant(mosqueId) {
+      return signedIn() && me().active == true && me().mosqueId == mosqueId;
     }
-    function isPlatformAdmin() {
-      return signedIn() && userData().role == 'SUPERADMIN' && userData().active == true;
+    function activeTenant(mosqueId) {
+      return sameTenant(mosqueId) && get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true;
     }
-    // role of the caller inside a given mosque (null if not a member)
-    function roleIn(mosqueId) {
-      return signedIn() && userData().mosqueId == mosqueId && userData().active == true
-        ? userData().role : null;
-    }
-    function mosqueActive(mosqueId) {
-      return get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true;
-    }
-    function activeMember(mosqueId) {
-      return roleIn(mosqueId) != null && mosqueActive(mosqueId);
-    }
-
-    // ---- write permission per sub-collection (spec section 2.2) ----
-    function canWriteFunds(r)    { return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER'; }
-    function canWriteMoney(r)    { return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER' || r == 'CASHIER'; }
-    function canWriteDonors(r)   { return canWriteMoney(r); }
-    function canDeleteDonors(r)  { return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER'; }
-    function canWriteMembers(r) { return r == 'ADMIN' || r == 'PRESIDENT' || r == 'SECRETARY'; }
-    function canWriteTransfers(r){ return r == 'ADMIN' || r == 'SECRETARY' || r == 'TREASURER'; }
-
-    // ---- users (committee members + superadmin profile) ----
     match /users/{uid} {
-      allow read: if signedIn();
-      allow create: if isPlatformAdmin()
-        || (activeMember(request.resource.data.mosqueId)
-            && canWriteMembers(roleIn(request.resource.data.mosqueId)));
-      allow update: if isPlatformAdmin()
-        || (activeMember(resource.data.mosqueId)
-            && canWriteMembers(roleIn(resource.data.mosqueId))
-            // spec 2.3: cannot deactivate yourself
-            && !(uid == request.auth.uid && request.resource.data.active == false));
-      allow delete: if isPlatformAdmin()
-        || (activeMember(resource.data.mosqueId)
-            && canWriteMembers(roleIn(resource.data.mosqueId))
-            // spec 2.3: cannot delete yourself
-            && uid != request.auth.uid);
+      // Self-read permits login to report an inactive profile; tenant queries must
+      // constrain mosqueId and cannot read profiles from a different tenant.
+      allow read: if signedIn() && (request.auth.uid == uid || platform() || activeTenant(resource.data.mosqueId));
+      allow write: if false; // privileged mutations use the Admin SDK
     }
-
-    // ---- mosques (platform console only) ----
     match /mosques/{mosqueId} {
-      allow read: if isPlatformAdmin() || activeMember(mosqueId);
-      allow create, update: if isPlatformAdmin();
-      allow delete: if false; // spec 1.11: only deactivate, data is never deleted
-
-      // ---- tenant sub-collections ----
-      match /funds/{doc} {
-        allow read: if isPlatformAdmin() || activeMember(mosqueId);
-        allow write: if isPlatformAdmin()
-          || (activeMember(mosqueId) && canWriteFunds(roleIn(mosqueId)));
-      }
-      match /contributions/{doc} {
-        allow read: if isPlatformAdmin() || activeMember(mosqueId);
-        allow write: if isPlatformAdmin()
-          || (activeMember(mosqueId) && canWriteMoney(roleIn(mosqueId)));
-      }
-      match /expenses/{doc} {
-        allow read: if isPlatformAdmin() || activeMember(mosqueId);
-        allow write: if isPlatformAdmin()
-          || (activeMember(mosqueId) && canWriteMoney(roleIn(mosqueId)));
-      }
-      match /transfers/{doc} {
-        allow read: if isPlatformAdmin() || activeMember(mosqueId);
-        allow write: if isPlatformAdmin()
-          || (activeMember(mosqueId) && canWriteTransfers(roleIn(mosqueId)));
-      }
-      match /donors/{doc} {
-        allow read: if isPlatformAdmin() || activeMember(mosqueId);
-        allow create, update: if isPlatformAdmin()
-          || (activeMember(mosqueId) && canWriteDonors(roleIn(mosqueId)));
-        allow delete: if isPlatformAdmin()
-          || (activeMember(mosqueId) && canDeleteDonors(roleIn(mosqueId)));
+      // Members may read their own inactive mosque to receive the correct login error.
+      allow read: if platform() || sameTenant(mosqueId);
+      allow create, delete: if false;
+      allow update: if platform()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
+          'establishedYear', 'registrationNo', 'active'
+        ])
+        && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true);
+      match /{collection}/{doc} {
+        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers']
+          && (platform() || activeTenant(mosqueId));
+        allow write: if false;
       }
     }
   }

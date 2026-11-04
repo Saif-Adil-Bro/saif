@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -132,6 +133,7 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = Expense(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_expense))
@@ -139,7 +141,7 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { (all, funds) ->
+        StateBox(state) { (all, funds) ->
             val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", ym.first, ym.second)
             val list = all
                 .filter { it.date.startsWith(monthPrefix) }
@@ -147,7 +149,8 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
 
             LazyColumn(
                 Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically,
@@ -164,7 +167,8 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
                         }) { Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month)) }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = fundFilter == null, onClick = { fundFilter = null },
                             label = { Text(stringResource(R.string.all_funds)) })
                         funds.forEach { f ->
@@ -176,27 +180,12 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
                 if (list.isEmpty()) item { EmptyBox() }
                 items(list, key = { it.id }) { e ->
                     val fundName = funds.firstOrNull { it.id == e.accountId }?.let { "${it.code} ${it.name}" } ?: "—"
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(e.title, style = MaterialTheme.typography.bodyLarge)
-                                Text("$fundName • ${Format.date(e.date)}" +
-                                    (if (e.paidTo.isNotBlank()) " • ${e.paidTo}" else "") +
-                                    (if (e.receiptNo.isNotBlank()) " • #${e.receiptNo}" else ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            MoneyText(e.amount, color = MaterialTheme.colorScheme.error)
-                            if (vm.canEdit) {
-                                IconButton(onClick = { editing = e }) { Icon(Icons.Filled.Edit, contentDescription = null) }
-                                IconButton(onClick = { deleting = e }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+                    com.saif.mosque.ui.components.RecordCard(
+                        title = e.title,
+                        supporting = listOf(fundName, Format.date(e.date), e.paidTo.takeIf { it.isNotBlank() }, e.receiptNo.takeIf { it.isNotBlank() }?.let { "#$it" }).filterNotNull().joinToString(" · "),
+                        amount = Format.money(e.amount), amountColor = MaterialTheme.colorScheme.error,
+                        onEdit = if (vm.canEdit) ({ editing = e }) else null,
+                        onDelete = if (vm.canEdit) ({ deleting = e }) else null)
                 }
             }
         }
@@ -247,7 +236,7 @@ private fun ExpenseFormDialog(
                 LabeledField(stringResource(R.string.category), category, { category = it })
                 DropdownField(
                     label = stringResource(R.string.account),
-                    options = funds.map { it.id to "${it.code} — ${it.name}" },
+                    options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
                     onSelect = { accountId = it }
                 )

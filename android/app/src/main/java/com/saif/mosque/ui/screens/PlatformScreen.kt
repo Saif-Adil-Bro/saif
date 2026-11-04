@@ -2,6 +2,9 @@
 
 package com.saif.mosque.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -47,6 +51,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -147,6 +153,7 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
     var filter by remember { mutableStateOf(Filter.All) }
     var editing by remember { mutableStateOf<Mosque?>(null) }   // null=closed, Mosque()=new, else edit
     var pendingDeactivate by remember { mutableStateOf<Mosque?>(null) }
+    var confirmLogout by remember { mutableStateOf(false) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -162,12 +169,12 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
             TopAppBar(
                 title = { Text(stringResource(R.string.platform_console)) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
                 ),
                 actions = {
-                    TextButton(onClick = { authVm.logout() }) {
-                        Text(stringResource(R.string.logout), color = MaterialTheme.colorScheme.onPrimary)
+                    IconButton(onClick = { confirmLogout = true }) {
+                        Icon(Icons.Filled.Logout, contentDescription = stringResource(R.string.logout))
                     }
                 }
             )
@@ -179,25 +186,28 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { mosques ->
+        Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.widthIn(max = 1000.dp).fillMaxSize()) {
+        StateBox(state) { mosques ->
             val filtered = mosques.filter { m ->
                 (filter == Filter.All || (filter == Filter.Active) == m.active) &&
                     (query.isBlank() || listOf(m.name, m.nameEn, m.address, m.district, m.email)
                         .any { it.contains(query, ignoreCase = true) })
             }
             LazyColumn(
-                Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 item {
                     Text(stringResource(R.string.platform_summary), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatCard(stringResource(R.string.total_mosques), Format.bn(mosques.size))
-                        StatCard(stringResource(R.string.active_mosques), Format.bn(mosques.count { it.active }))
-                        StatCard(stringResource(R.string.total_users), Format.bn(mosques.sumOf { it.memberCount }))
-                        StatCard(stringResource(R.string.combined_balance), Format.money(mosques.sumOf { it.totalBalance }))
-                    }
+                    com.saif.mosque.ui.components.StatsGrid(listOf(
+                        com.saif.mosque.ui.components.StatItem(stringResource(R.string.total_mosques), Format.bn(mosques.size)),
+                        com.saif.mosque.ui.components.StatItem(stringResource(R.string.active_mosques), Format.bn(mosques.count { it.active })),
+                        com.saif.mosque.ui.components.StatItem(stringResource(R.string.total_users), Format.bn(mosques.sumOf { it.memberCount })),
+                        com.saif.mosque.ui.components.StatItem(stringResource(R.string.combined_balance), Format.money(mosques.sumOf { it.totalBalance }))
+                    ))
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = query, onValueChange = { query = it },
@@ -205,7 +215,8 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
                         modifier = Modifier.fillMaxWidth(), singleLine = true
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Filter.entries.forEach { f ->
                             FilterChip(
                                 selected = filter == f,
@@ -216,7 +227,7 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
                     }
                 }
                 if (filtered.isEmpty()) {
-                    item { Text(stringResource(R.string.empty_list), Modifier.padding(24.dp)) }
+                    item { com.saif.mosque.ui.components.EmptyBox() }
                 }
                 items(filtered, key = { it.id }) { m ->
                     MosqueCard(
@@ -229,6 +240,8 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
                     )
                 }
             }
+        }
+        }
         }
     }
 
@@ -257,12 +270,18 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
         CredentialsDialog(created, onDismiss = { vm.dismissCreated() })
     }
 
+    if (confirmLogout) ConfirmDialog(
+        title = stringResource(R.string.logout), message = stringResource(R.string.log_out_confirm),
+        onConfirm = { authVm.logout() }, onDismiss = { confirmLogout = false },
+        confirmLabel = stringResource(R.string.logout))
+
     pendingDeactivate?.let { m ->
         ConfirmDialog(
             title = stringResource(R.string.deactivate),
             message = stringResource(R.string.mosque_deactivated_warn),
             onConfirm = { vm.setActive(m, false) },
-            onDismiss = { pendingDeactivate = null }
+            onDismiss = { pendingDeactivate = null },
+            confirmLabel = stringResource(R.string.deactivate)
         )
     }
 }
@@ -273,30 +292,36 @@ private enum class Filter(val labelRes: Int) {
 
 @Composable
 private fun MosqueCard(mosque: Mosque, onEdit: () -> Unit, onToggle: (Boolean) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(mosque.name, style = MaterialTheme.typography.titleMedium)
-                    if (mosque.nameEn.isNotBlank()) Text(mosque.nameEn,
-                        style = MaterialTheme.typography.bodySmall,
+                    val location = listOf(mosque.address, mosque.upazila, mosque.district)
+                        .filter { it.isNotBlank() }.joinToString(", ")
+                    if (location.isNotBlank()) Text(location, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        listOfNotNull(mosque.upazila, mosque.district, mosque.address)
-                            .joinToString(", "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
-                IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.edit)) }
-                Switch(checked = mosque.active, onCheckedChange = { onToggle(it) })
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.edit),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            Spacer(Modifier.height(6.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AssistChip(onClick = {}, label = { Text("👥 ${Format.bn(mosque.memberCount)}") })
-                AssistChip(onClick = {}, label = { Text("🎁 ${Format.bn(mosque.donorCount)}") })
-                AssistChip(onClick = {}, label = { Text("💰 ${Format.bn(mosque.fundCount)}") })
-                AssistChip(onClick = {}, label = { Text(Format.money(mosque.totalBalance)) })
+            Text(stringResource(R.string.balance), style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(Format.money(mosque.totalBalance), style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary)
+            Text("${stringResource(R.string.members)} · ${Format.bn(mosque.memberCount)}    " +
+                "${stringResource(R.string.donors)} · ${Format.bn(mosque.donorCount)}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(if (mosque.active) R.string.active else R.string.inactive),
+                    Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                    color = if (mosque.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                Switch(checked = mosque.active, onCheckedChange = { onToggle(it) },
+                    modifier = Modifier.semantics { contentDescription = mosque.name })
             }
         }
     }
@@ -333,24 +358,18 @@ private fun MosqueFormDialog(
                 LabeledField(stringResource(R.string.mosque_name), name, { name = it }, error = error)
                 LabeledField(stringResource(R.string.mosque_name_en), nameEn, { nameEn = it })
                 LabeledField(stringResource(R.string.address), address, { address = it })
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LabeledField(stringResource(R.string.district), district, { district = it }, modifier = Modifier.weight(1f))
-                    LabeledField(stringResource(R.string.upazila), upazila, { upazila = it }, modifier = Modifier.weight(1f))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LabeledField(stringResource(R.string.phone), phone, { phone = it }, modifier = Modifier.weight(1f), keyboardType = KeyboardType.Phone)
-                    LabeledField(stringResource(R.string.email), email, { email = it }, modifier = Modifier.weight(1f), keyboardType = KeyboardType.Email)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LabeledField(stringResource(R.string.established_year), year, { year = it }, modifier = Modifier.weight(1f), keyboardType = KeyboardType.Number)
-                    LabeledField(stringResource(R.string.registration_no), regNo, { regNo = it }, modifier = Modifier.weight(1f))
-                }
+                LabeledField(stringResource(R.string.district), district, { district = it })
+                LabeledField(stringResource(R.string.upazila), upazila, { upazila = it })
+                LabeledField(stringResource(R.string.phone), phone, { phone = it }, keyboardType = KeyboardType.Phone)
+                LabeledField(stringResource(R.string.email), email, { email = it }, keyboardType = KeyboardType.Email)
+                LabeledField(stringResource(R.string.established_year), year, { year = it }, keyboardType = KeyboardType.Number)
+                LabeledField(stringResource(R.string.registration_no), regNo, { regNo = it })
                 if (isNew) {
-                    SectionTitle(stringResource(R.string.admin_name))
+                    SectionTitle(stringResource(R.string.admin_details))
                     LabeledField(stringResource(R.string.admin_name), adminName, { adminName = it })
                     LabeledField(stringResource(R.string.admin_email), adminEmail, { adminEmail = it }, keyboardType = KeyboardType.Email)
                     LabeledField(stringResource(R.string.admin_phone), adminPhone, { adminPhone = it }, keyboardType = KeyboardType.Phone)
-                    LabeledField(stringResource(R.string.admin_password_optional), adminPassword, { adminPassword = it }, keyboardType = KeyboardType.Password)
+                    com.saif.mosque.ui.components.PasswordField(stringResource(R.string.admin_password_optional), adminPassword, { adminPassword = it })
                 }
             }
         },

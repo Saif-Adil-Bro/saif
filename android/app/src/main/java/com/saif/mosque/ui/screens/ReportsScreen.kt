@@ -47,6 +47,7 @@ import com.saif.mosque.ui.components.SectionTitle
 import com.saif.mosque.ui.components.StatCard
 import com.saif.mosque.util.Format
 import com.saif.mosque.util.UiState
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -67,8 +68,10 @@ class ReportsViewModel(
 
     init { load() }
 
+    private var loadJob: kotlinx.coroutines.Job? = null
     fun load() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _state.value = UiState.Loading
             try {
                 val (y, m) = _yearMonth.value
@@ -86,6 +89,8 @@ class ReportsViewModel(
                     contributions = contributions.sortedByDescending { it.date },
                     expenses = expenses.sortedByDescending { it.date }
                 ))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.value = UiState.Error(e.message ?: "error")
             }
@@ -114,10 +119,13 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
     val ym by vm.yearMonth.collectAsStateWithLifecycle()
 
     // fund labels for the by-fund section
-    val fundsState by container.ledgerRepository.observeFunds(mosqueId)
-        .collectAsState(initial = emptyList())
+    val fundsFlow = remember(mosqueId) {
+        container.ledgerRepository.observeFunds(mosqueId)
+            .catch { emit(emptyList()) }
+    }
+    val fundsState by fundsFlow.collectAsState(initial = emptyList())
 
-    Scaffold { inner ->
+    Scaffold(contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -140,52 +148,30 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
                     val fundNames = fundsState.associateBy({ it.id }, { "${it.code} ${it.name}" })
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         item {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                StatCard(stringResource(R.string.income), Format.money(report.income),
-                                    modifier = Modifier.weight(1f),
-                                    valueColor = MaterialTheme.colorScheme.primary)
-                                StatCard(stringResource(R.string.expense), Format.money(report.expense),
-                                    modifier = Modifier.weight(1f),
-                                    valueColor = MaterialTheme.colorScheme.error)
-                            }
+                            com.saif.mosque.ui.components.StatsGrid(listOf(
+                                com.saif.mosque.ui.components.StatItem(stringResource(R.string.income), Format.money(report.income)),
+                                com.saif.mosque.ui.components.StatItem(stringResource(R.string.expense), Format.money(report.expense), MaterialTheme.colorScheme.error)
+                            ))
                         }
                         item { SectionTitle(stringResource(R.string.by_fund)) }
                         if (report.byFund.isEmpty()) item { EmptyBox() }
                         items(report.byFund, key = { it.first }) { (acc, total) ->
-                            Card(Modifier.fillMaxWidth()) {
-                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(fundNames[acc] ?: acc, Modifier.weight(1f))
-                                    MoneyText(total)
-                                }
-                            }
+                            com.saif.mosque.ui.components.RecordCard(
+                                title = fundNames[acc] ?: acc, amount = Format.money(total))
                         }
                         item { SectionTitle(stringResource(R.string.contributions_of_month)) }
                         if (report.contributions.isEmpty()) item { EmptyBox() }
                         items(report.contributions, key = { it.id }) { c ->
-                            Card(Modifier.fillMaxWidth()) {
-                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(c.donorName.ifBlank { "—" })
-                                        Text(Format.date(c.date), style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    MoneyText(c.amount, color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
+                            com.saif.mosque.ui.components.RecordCard(
+                                title = c.donorName.ifBlank { "—" }, supporting = Format.date(c.date),
+                                amount = Format.money(c.amount), amountColor = MaterialTheme.colorScheme.primary)
                         }
                         item { SectionTitle(stringResource(R.string.expenses_of_month)) }
                         if (report.expenses.isEmpty()) item { EmptyBox() }
                         items(report.expenses, key = { it.id }) { e ->
-                            Card(Modifier.fillMaxWidth()) {
-                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(e.title)
-                                        Text(Format.date(e.date), style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    MoneyText(e.amount, color = MaterialTheme.colorScheme.error)
-                                }
-                            }
+                            com.saif.mosque.ui.components.RecordCard(
+                                title = e.title, supporting = Format.date(e.date),
+                                amount = Format.money(e.amount), amountColor = MaterialTheme.colorScheme.error)
                         }
                         item { Spacer(Modifier.height(24.dp)) }
                     }

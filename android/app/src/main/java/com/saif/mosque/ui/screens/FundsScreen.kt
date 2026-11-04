@@ -37,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -54,6 +56,7 @@ import com.saif.mosque.ui.components.EmptyBox
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.MoneyText
 import com.saif.mosque.ui.components.StateBox
+import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
 import com.saif.mosque.util.Permissions
 import com.saif.mosque.util.UiState
@@ -119,6 +122,7 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = Fund() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_fund))
@@ -126,40 +130,23 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { funds ->
+        StateBox(state) { funds ->
             if (funds.isEmpty()) {
                 EmptyBox()
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
                     items(funds, key = { it.id }) { fund ->
-                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface)) {
-                            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("${fund.code} — ${fund.name}",
-                                        style = MaterialTheme.typography.titleMedium)
-                                    if (fund.nameEn.isNotBlank()) Text(fund.nameEn,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (!fund.active) Text(stringResource(R.string.inactive),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error)
-                                }
-                                MoneyText(fund.balance)
-                                if (vm.canEdit) {
-                                    IconButton(onClick = { editing = fund }) {
-                                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.edit))
-                                    }
-                                    IconButton(onClick = { deleting = fund }) {
-                                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete),
-                                            tint = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                        }
+                        com.saif.mosque.ui.components.RecordCard(
+                            title = "${fund.code} · ${fund.name}", supporting = fund.nameEn,
+                            amount = Format.money(fund.balance), amountLabel = stringResource(R.string.balance),
+                            status = if (!fund.active) stringResource(R.string.inactive) else null,
+                            onEdit = if (vm.canEdit) ({ editing = fund }) else null,
+                            onDelete = if (vm.canEdit && fund.active) ({ deleting = fund }) else null,
+                            archive = true, deleteLabel = stringResource(R.string.archive))
                     }
                 }
             }
@@ -183,7 +170,8 @@ fun FundsScreen(container: AppContainer, user: AppUser) {
             title = stringResource(R.string.confirm_delete),
             message = stringResource(R.string.delete_fund_q),
             onConfirm = { vm.delete(fund) },
-            onDismiss = { deleting = null }
+            onDismiss = { deleting = null },
+            confirmLabel = stringResource(R.string.archive)
         )
     }
 }
@@ -213,7 +201,9 @@ private fun FundFormDialog(
                 LabeledField(stringResource(R.string.description), description, { description = it }, singleLine = false)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
-                    Switch(checked = active, onCheckedChange = { active = it })
+                    val activeLabel = stringResource(R.string.active)
+                    Switch(checked = active, onCheckedChange = { active = it },
+                        modifier = Modifier.semantics { contentDescription = activeLabel })
                 }
             }
         },

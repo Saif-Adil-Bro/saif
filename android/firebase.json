@@ -5,5 +5,8 @@
   },
   "android": {
     "googleServicesFile": "app/google-services.json"
+  },
+  "functions": {
+    "source": "functions"
   }
 }

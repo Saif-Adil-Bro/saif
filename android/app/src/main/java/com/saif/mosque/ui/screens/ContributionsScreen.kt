@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -137,6 +138,7 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = Contribution(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_contribution))
@@ -144,7 +146,7 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { (all, funds) ->
+        StateBox(state) { (all, funds) ->
             val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", ym.first, ym.second)
             val list = all
                 .filter { it.date.startsWith(monthPrefix) }
@@ -152,7 +154,8 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
 
             LazyColumn(
                 Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically,
@@ -169,7 +172,8 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                         }) { Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month)) }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = fundFilter == null, onClick = { fundFilter = null },
                             label = { Text(stringResource(R.string.all_funds)) })
                         funds.forEach { f ->
@@ -181,26 +185,12 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                 if (list.isEmpty()) item { EmptyBox() }
                 items(list, key = { it.id }) { c ->
                     val fundName = funds.firstOrNull { it.id == c.accountId }?.let { "${it.code} ${it.name}" } ?: "—"
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(c.donorName.ifBlank { "—" }, style = MaterialTheme.typography.bodyLarge)
-                                Text("$fundName • ${Format.date(c.date)}" +
-                                    (if (c.receiptNo.isNotBlank()) " • #${c.receiptNo}" else ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            MoneyText(c.amount, color = MaterialTheme.colorScheme.primary)
-                            if (vm.canEdit) {
-                                IconButton(onClick = { editing = c }) { Icon(Icons.Filled.Edit, contentDescription = null) }
-                                IconButton(onClick = { deleting = c }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+                    com.saif.mosque.ui.components.RecordCard(
+                        title = c.donorName.ifBlank { "—" },
+                        supporting = listOf(fundName, Format.date(c.date), c.receiptNo.takeIf { it.isNotBlank() }?.let { "#$it" }).filterNotNull().joinToString(" · "),
+                        amount = Format.money(c.amount), amountColor = MaterialTheme.colorScheme.primary,
+                        onEdit = if (vm.canEdit) ({ editing = c }) else null,
+                        onDelete = if (vm.canEdit) ({ deleting = c }) else null)
                 }
             }
         }
@@ -243,7 +233,7 @@ private fun ContributionFormDialog(
     var note by remember { mutableStateOf(initial.note) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val donorOptions = donors.map { it.id to it.name } + ("" to stringResource(R.string.donor_name_free))
+    val donorOptions = donors.filter { it.active || it.id == initial.donorId }.map { it.id to it.name } + ("" to stringResource(R.string.donor_name_free))
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -261,7 +251,7 @@ private fun ContributionFormDialog(
                 }
                 DropdownField(
                     label = stringResource(R.string.account),
-                    options = funds.map { it.id to "${it.code} — ${it.name}" },
+                    options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
                     onSelect = { accountId = it }
                 )

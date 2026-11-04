@@ -1,7 +1,15 @@
 package com.saif.mosque.ui.navigation
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -10,6 +18,10 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -22,6 +34,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -62,7 +77,7 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
                 composable(Screen.Login.route) { LoginScreen(authVm, isWideScreen) }
             }
         }
-        is AuthUiState.Authed -> {
+        is AuthUiState.Authed -> androidx.compose.runtime.key(s.user.id, s.user.role, s.user.mosqueId) {
             val nav = rememberNavController()
             val start = if (Permissions.isPlatform(s.user.role)) Screen.Platform.route else Screen.Dashboard.route
             NavHost(nav, start) {
@@ -92,7 +107,7 @@ private val mosqueNavItems = listOf(
     NavItem(Screen.More, Icons.Filled.MoreHoriz, R.string.more)
 )
 
-/** Shared scaffold for mosque-tenant screens: top bar + bottom navigation. */
+/** One navigation shell for phones and tablets. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MosqueShell(
@@ -101,40 +116,70 @@ fun MosqueShell(
     titleRes: Int,
     content: @Composable () -> Unit
 ) {
-    val snackbarHostState = remember { SnackbarHostState() }
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
+    val isSecondary = currentRoute in setOf(Screen.Donors.route, Screen.Members.route,
+        Screen.Transfers.route, Screen.Reports.route)
+    fun selected(item: NavItem) = currentRoute == item.screen.route ||
+        (isSecondary && item.screen == Screen.More)
+    fun navigate(item: NavItem) {
+        nav.navigate(item.screen.route) {
+            popUpTo(nav.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(titleRes)) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                mosqueNavItems.forEach { item ->
-                    NavigationBarItem(
-                        selected = currentRoute == item.screen.route,
-                        onClick = {
-                            nav.navigate(item.screen.route) {
-                                popUpTo(nav.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(item.icon, contentDescription = null) },
-                        label = { Text(stringResource(item.labelRes)) }
-                    )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 600.dp
+        Row(Modifier.fillMaxSize()) {
+            if (wide) {
+                NavigationRail(
+                    modifier = Modifier.fillMaxHeight().statusBarsPadding(),
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    mosqueNavItems.forEach { item ->
+                        NavigationRailItem(selected = selected(item), onClick = { navigate(item) },
+                            icon = { Icon(item.icon, contentDescription = stringResource(item.labelRes)) },
+                            label = { Text(stringResource(item.labelRes), maxLines = 1) },
+                            alwaysShowLabel = true)
+                    }
                 }
             }
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { inner ->
-        androidx.compose.foundation.layout.Box(Modifier.padding(inner)) { content() }
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                containerColor = MaterialTheme.colorScheme.background,
+                topBar = {
+                    TopAppBar(
+                        title = { Text(stringResource(titleRes), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        navigationIcon = {
+                            if (isSecondary) IconButton(onClick = { nav.popBackStack() }) {
+                                Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground)
+                    )
+                },
+                bottomBar = {
+                    if (!wide) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        mosqueNavItems.forEach { item ->
+                            NavigationBarItem(selected = selected(item), onClick = { navigate(item) },
+                                icon = { Icon(item.icon, contentDescription = stringResource(item.labelRes)) },
+                                label = { Text(stringResource(item.labelRes), maxLines = 1) },
+                                alwaysShowLabel = false,
+                                colors = NavigationBarItemDefaults.colors(
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedIconColor = MaterialTheme.colorScheme.primary))
+                        }
+                    }
+                }
+            ) { inner ->
+                Box(Modifier.fillMaxSize().padding(inner), contentAlignment = Alignment.TopCenter) {
+                    Box(Modifier.widthIn(max = 1000.dp).fillMaxSize()) { content() }
+                }
+            }
+        }
     }
 }

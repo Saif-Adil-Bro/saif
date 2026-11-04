@@ -44,13 +44,13 @@ object Format {
         LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     fun isoToEpochMilli(iso: String): Long = try {
-        LocalDate.parse(iso).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        LocalDate.parse(iso).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
     } catch (e: Exception) {
         System.currentTimeMillis()
     }
 
     fun epochMilliToIso(millis: Long): String =
-        Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+        Instant.ofEpochMilli(millis).atZone(java.time.ZoneOffset.UTC).toLocalDate()
             .format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     /** "MMMM yyyy" in Bengali via CLDR (e.g. জানুয়ারি ২০২৬), digits converted to Bengali. */

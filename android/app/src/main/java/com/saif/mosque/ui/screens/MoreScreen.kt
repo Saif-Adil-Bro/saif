@@ -1,28 +1,38 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-
 package com.saif.mosque.ui.screens
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -31,60 +41,66 @@ import androidx.navigation.NavHostController
 import com.saif.mosque.R
 import com.saif.mosque.data.model.AppUser
 import com.saif.mosque.di.AppContainer
+import com.saif.mosque.ui.components.ConfirmDialog
+import com.saif.mosque.ui.components.SectionTitle
 import com.saif.mosque.ui.navigation.Screen
 import com.saif.mosque.ui.viewmodel.AuthViewModel
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthViewModel, user: AppUser) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(stringResource(R.string.current_user), style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(user.name, style = MaterialTheme.typography.titleLarge)
-                Text(user.email, style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(roleLabel(user.role), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary)
+    var confirmLogout by remember { mutableStateOf(false) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(stringResource(R.string.current_user), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(user.name, style = MaterialTheme.typography.titleLarge)
+                        Text(user.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(roleLabel(user.role), style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                }
             }
         }
-
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MenuCard(stringResource(R.string.donors), Icons.Filled.People) {
-                nav.navigate(Screen.Donors.route)
-            }
-            MenuCard(stringResource(R.string.members), Icons.Filled.AccountBalanceWallet) {
-                nav.navigate(Screen.Members.route)
-            }
-            MenuCard(stringResource(R.string.transfers), Icons.Filled.SwapHoriz) {
-                nav.navigate(Screen.Transfers.route)
-            }
-            MenuCard(stringResource(R.string.reports), Icons.Filled.Assignment) {
-                nav.navigate(Screen.Reports.route)
-            }
-        }
-
-        Card(Modifier.fillMaxWidth().clickable { authVm.logout() },
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.logout), color = MaterialTheme.colorScheme.error) },
-                leadingContent = { Icon(Icons.Filled.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-            )
+        item { SectionTitle(stringResource(R.string.quick_access)) }
+        item { MenuCard(stringResource(R.string.donors), Icons.Filled.People) { nav.navigate(Screen.Donors.route) } }
+        item { MenuCard(stringResource(R.string.members), Icons.Filled.Groups) { nav.navigate(Screen.Members.route) } }
+        item { MenuCard(stringResource(R.string.transfers), Icons.Filled.SwapHoriz) { nav.navigate(Screen.Transfers.route) } }
+        item { MenuCard(stringResource(R.string.reports), Icons.Filled.Assignment) { nav.navigate(Screen.Reports.route) } }
+        item {
+            MenuCard(stringResource(R.string.logout), Icons.Filled.Logout, destructive = true) { confirmLogout = true }
         }
     }
+    if (confirmLogout) ConfirmDialog(
+        title = stringResource(R.string.logout), message = stringResource(R.string.log_out_confirm),
+        onConfirm = { authVm.logout() }, onDismiss = { confirmLogout = false },
+        confirmLabel = stringResource(R.string.logout))
 }
 
 @Composable
-private fun MenuCard(title: String, icon: ImageVector, onClick: () -> Unit) {
-    Card(Modifier.clickable(onClick = onClick)) {
-        Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+private fun MenuCard(title: String, icon: ImageVector, destructive: Boolean = false, onClick: () -> Unit) {
+    val tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick), shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.size(42.dp).background(
+                if (destructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = tint)
+            }
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = tint)
+            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

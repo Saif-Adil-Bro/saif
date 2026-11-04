@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -118,6 +120,7 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = Donor() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_donor))
@@ -125,13 +128,14 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { donors ->
+        StateBox(state) { donors ->
             val filtered = donors.filter {
                 query.isBlank() || it.name.contains(query, true) || it.phone.contains(query, true)
             }
             LazyColumn(
                 Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 item {
                     OutlinedTextField(
@@ -142,31 +146,15 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
                 }
                 if (filtered.isEmpty()) item { EmptyBox() }
                 items(filtered, key = { it.id }) { d ->
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(d.name, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    listOfNotNull(d.phone, d.address).joinToString(" • ") +
-                                        if (!d.active) " • ${stringResource(R.string.inactive)}" else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${stringResource(R.string.total_donated)}: ${Format.money(d.totalDonated)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary)
-                            }
-                            if (vm.canEdit) {
-                                IconButton(onClick = { editing = d }) { Icon(Icons.Filled.Edit, contentDescription = null) }
-                            }
-                            if (vm.canDelete) {
-                                IconButton(onClick = { deleting = d }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+                    com.saif.mosque.ui.components.RecordCard(
+                        title = d.name,
+                        supporting = listOf(d.phone, d.address).filter { it.isNotBlank() }.joinToString(" · "),
+                        amount = Format.money(d.totalDonated), amountLabel = stringResource(R.string.total_donated),
+                        amountColor = MaterialTheme.colorScheme.primary,
+                        status = if (!d.active) stringResource(R.string.inactive) else null,
+                        onEdit = if (vm.canEdit) ({ editing = d }) else null,
+                        onDelete = if (vm.canDelete && d.active) ({ deleting = d }) else null,
+                        archive = true, deleteLabel = stringResource(R.string.archive))
                 }
             }
         }
@@ -184,8 +172,9 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
         )
     }
     deleting?.let { d ->
-        ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_question),
-            onConfirm = { vm.delete(d) }, onDismiss = { deleting = null })
+        ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.archive_donor_q),
+            onConfirm = { vm.delete(d) }, onDismiss = { deleting = null },
+            confirmLabel = stringResource(R.string.archive))
     }
 }
 
@@ -213,7 +202,9 @@ private fun DonorFormDialog(
                 LabeledField(stringResource(R.string.address), address, { address = it }, singleLine = false)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
-                    Switch(checked = active, onCheckedChange = { active = it })
+                    val activeLabel = stringResource(R.string.active)
+                    Switch(checked = active, onCheckedChange = { active = it },
+                        modifier = Modifier.semantics { contentDescription = activeLabel })
                 }
             }
         },

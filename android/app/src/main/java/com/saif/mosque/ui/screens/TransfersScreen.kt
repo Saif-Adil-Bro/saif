@@ -132,6 +132,7 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = Transfer(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_transfer))
@@ -139,33 +140,23 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { (transfers, funds) ->
+        StateBox(state) { (transfers, funds) ->
             if (transfers.isEmpty()) {
                 EmptyBox()
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
                     items(transfers, key = { it.id }) { t ->
                         val from = funds.firstOrNull { it.id == t.fromAccountId }?.code ?: "?"
                         val to = funds.firstOrNull { it.id == t.toAccountId }?.code ?: "?"
-                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface)) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("$from → $to", style = MaterialTheme.typography.bodyLarge)
-                                    Text(Format.date(t.date) + (if (t.note.isNotBlank()) " • ${t.note}" else ""),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                MoneyText(t.amount)
-                                if (vm.canEdit) IconButton(onClick = { deleting = t }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
+                        com.saif.mosque.ui.components.RecordCard(
+                            title = "$from → $to",
+                            supporting = listOf(Format.date(t.date), t.note).filter { it.isNotBlank() }.joinToString(" · "),
+                            amount = Format.money(t.amount),
+                            onDelete = if (vm.canEdit) ({ deleting = t }) else null)
                     }
                 }
             }
@@ -191,14 +182,14 @@ private fun TransferFormDialog(
     onDismiss: () -> Unit,
     onSave: (Transfer) -> Unit
 ) {
-    var fromId by remember { mutableStateOf(funds.firstOrNull()?.id ?: "") }
-    var toId by remember { mutableStateOf(funds.getOrNull(1)?.id ?: funds.firstOrNull()?.id ?: "") }
+    var fromId by remember { mutableStateOf(funds.firstOrNull { it.active }?.id ?: "") }
+    var toId by remember { mutableStateOf(funds.filter { it.active }.getOrNull(1)?.id ?: "") }
     var amount by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(Format.todayIso()) }
     var note by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val options = funds.map { it.id to "${it.code} — ${it.name} (${Format.money(it.balance)})" }
+    val options = funds.filter { it.active }.map { it.id to "${it.code} — ${it.name} (${Format.money(it.balance)})" }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -215,7 +206,7 @@ private fun TransferFormDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                if (fromId == toId) { error = "same"; return@TextButton }
+                if (fromId.isBlank() || toId.isBlank() || fromId == toId) { error = "same"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
                 onSave(Transfer(fromAccountId = fromId, toAccountId = toId,
                     amount = amount.toDouble(), date = date, note = note.trim()))

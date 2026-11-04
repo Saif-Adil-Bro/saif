@@ -18,8 +18,9 @@ object Validators {
 
     fun amount(value: String): String? {
         if (value.isBlank()) return "required_field"
-        val d = value.toDoubleOrNull() ?: return "invalid_amount"
-        return if (d <= 0.0) "invalid_amount" else null
+        val amount = value.toBigDecimalOrNull() ?: return "invalid_amount"
+        return if (amount <= java.math.BigDecimal.ZERO || amount.scale() > 2 ||
+            amount > java.math.BigDecimal("9000000000000")) "invalid_amount" else null
     }
 
     /** Bangladeshi mobile: 01XXXXXXXXX (11 digits starting with 01). */

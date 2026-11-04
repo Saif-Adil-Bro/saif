@@ -68,6 +68,10 @@ class SessionManager(private val context: Context) {
         val key = email.trim().lowercase()
         val locks = readLocks()
         val entry = locks[key] ?: longArrayOf(0L, 0L)
+        if (entry[1] > 0L && entry[1] <= System.currentTimeMillis()) {
+            entry[0] = 0L
+            entry[1] = 0L
+        }
         entry[0] = entry[0] + 1
         val remaining = if (entry[0] >= Config.MAX_LOGIN_ATTEMPTS) {
             entry[1] = System.currentTimeMillis() + Config.LOCKOUT_MILLIS

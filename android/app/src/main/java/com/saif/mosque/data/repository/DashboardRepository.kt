@@ -13,6 +13,10 @@ import com.saif.mosque.data.model.Transfer
 import com.saif.mosque.util.Format
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.delay
 
 /** Dashboard aggregation (spec module: dashboard) — computed from live streams. */
 class DashboardRepository(
@@ -21,18 +25,29 @@ class DashboardRepository(
 ) {
     private val ledger = LedgerRepository(db, session)
 
-    fun observeDashboard(mosqueId: String): Flow<DashboardData> {
-        val (year, month) = Format.currentYearMonth()
-        val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", year, month)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun observeDashboard(mosqueId: String): Flow<DashboardData> = flow {
+        while (true) {
+            emit(Format.currentYearMonth())
+            delay(60_000)
+        }
+    }.distinctUntilChanged().flatMapLatest { (year, month) ->
+        observeDashboardMonth(mosqueId, year, month)
+    }
+
+    private fun observeDashboardMonth(mosqueId: String, year: Int, month: Int): Flow<DashboardData> {
+        val (start, end) = Format.yearMonthIso(year, month)
 
         return combine(
             listOf(
                 ledger.observeFunds(mosqueId),
-                ledger.observeContributions(mosqueId),
-                ledger.observeExpenses(mosqueId),
+                ledger.observeMonthContributions(mosqueId, start, end),
+                ledger.observeMonthExpenses(mosqueId, start, end),
                 ledger.observeDonors(mosqueId),
-                ledger.observeTransfers(mosqueId),
-                ledger.observeMosque(mosqueId)
+                ledger.observeRecentTransfers(mosqueId),
+                ledger.observeMosque(mosqueId),
+                ledger.observeRecentContributions(mosqueId),
+                ledger.observeRecentExpenses(mosqueId)
             )
         ) { arr ->
             @Suppress("UNCHECKED_CAST")
@@ -46,13 +61,15 @@ class DashboardRepository(
             @Suppress("UNCHECKED_CAST")
             val transfers = arr[4] as List<Transfer>
             val mosque = arr[5] as Mosque?
-            val monthContrib = contributions.filter { it.date.startsWith(monthPrefix) }
-            val monthExpense = expenses.filter { it.date.startsWith(monthPrefix) }
+            @Suppress("UNCHECKED_CAST")
+            val recentContributions = arr[6] as List<Contribution>
+            @Suppress("UNCHECKED_CAST")
+            val recentExpenses = arr[7] as List<Expense>
 
             val recent = (
-                contributions.map {
+                recentContributions.map {
                     RecentTx(it.id, "contribution", it.donorName.ifBlank { "—" }, it.amount, it.date)
-                } + expenses.map {
+                } + recentExpenses.map {
                     RecentTx(it.id, "expense", it.title, -it.amount, it.date)
                 } + transfers.map {
                     RecentTx(it.id, "transfer", "Transfer", -it.amount, it.date)
@@ -61,8 +78,8 @@ class DashboardRepository(
 
             DashboardData(
                 totalBalance = mosque?.totalBalance ?: funds.sumOf { it.balance },
-                monthlyIncome = monthContrib.sumOf { it.amount },
-                monthlyExpense = monthExpense.sumOf { it.amount },
+                monthlyIncome = contributions.sumOf { it.amount },
+                monthlyExpense = expenses.sumOf { it.amount },
                 activeDonors = donors.count { it.active },
                 fundCount = funds.size,
                 fundBalances = funds.sortedByDescending { it.balance }.map { it to it.balance },
