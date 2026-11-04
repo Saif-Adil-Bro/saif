@@ -120,7 +120,9 @@ replace production balances from this report.
   creation are denied. Existing-member edits/deletions are restricted by role,
   tenant and self-protection rules; deletion requires an atomic counter decrement. Fund/donor metadata changes are constrained by role;
   creation uses a paired counter update, and financial fields cannot be changed
-  by these directory rules. Platform admins may edit only mosque metadata/status.
+  by these directory rules. The Android client uses an online transaction to reject
+  stale fund, donor and member metadata edits without overwriting balance changes.
+  Platform admins may edit only mosque metadata/status.
 - Callable functions re-check active user, role and mosque status, perform ledger
   mutations in Firestore transactions, use persisted records instead of trusting
   old client data, reject stale edits and insufficient balances, and maintain donor
