@@ -74,7 +74,7 @@ class DonorsViewModel(
     private val user: AppUser
 ) : ViewModel() {
     val state: StateFlow<UiState<List<Donor>>> = repo.observeDonors(mosqueId)
-        .map { UiState.Success(it) }
+        .map { UiState.Success(it) as UiState<List<Donor>> }
         .catch { emit(UiState.Error(it.message ?: "error")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 

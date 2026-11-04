@@ -86,7 +86,7 @@ class ExpensesViewModel(
 
     val state: StateFlow<UiState<Pair<List<Expense>, List<Fund>>>> =
         combine(repo.observeExpenses(mosqueId), repo.observeFunds(mosqueId)) { es, funds ->
-            UiState.Success(es to funds)
+            UiState.Success(es to funds) as UiState<Pair<List<Expense>, List<Fund>>>
         }
             .catch { emit(UiState.Error(it.message ?: "error")) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)

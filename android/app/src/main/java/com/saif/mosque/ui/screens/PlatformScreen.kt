@@ -24,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -86,7 +87,7 @@ import kotlinx.coroutines.launch
 
 class PlatformViewModel(private val repo: PlatformRepository) : ViewModel() {
     val state: StateFlow<UiState<List<Mosque>>> = repo.observeMosques()
-        .map { mosques -> UiState.Success(mosques) }
+        .map { mosques -> UiState.Success(mosques) as UiState<List<Mosque>> }
         .catch { emit(UiState.Error(it.message ?: "error")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 
@@ -134,6 +135,7 @@ class PlatformViewModel(private val repo: PlatformRepository) : ViewModel() {
 
 // ---------------- Screen ----------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser) {
     val vm: PlatformViewModel = viewModel { PlatformViewModel(container.platformRepository) }

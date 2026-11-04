@@ -77,7 +77,7 @@ class MembersViewModel(
     private val user: AppUser
 ) : ViewModel() {
     val state: StateFlow<UiState<List<AppUser>>> = ledger.observeMembers(mosqueId)
-        .map { UiState.Success(it.sortedWith(compareBy({ !it.active }, { it.name }))) }
+        .map { UiState.Success(it.sortedWith(compareBy({ !it.active }, { it.name }))) as UiState<List<AppUser>> }
         .catch { emit(UiState.Error(it.message ?: "error")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 

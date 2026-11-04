@@ -127,6 +127,7 @@ fun LoginScreen(authVm: AuthViewModel, isWideScreen: Boolean) {
                 }
                 LoginForm(
                     modifier = Modifier.weight(1f).fillMaxSize(),
+                    showBanner = false,
                     email = email, onEmail = { email = it },
                     password = password, onPassword = { password = it },
                     emailError = emailError, passwordError = passwordError,
@@ -150,6 +151,7 @@ fun LoginScreen(authVm: AuthViewModel, isWideScreen: Boolean) {
 @Composable
 private fun LoginForm(
     modifier: Modifier = Modifier,
+    showBanner: Boolean = true,
     email: String,
     onEmail: (String) -> Unit,
     password: String,

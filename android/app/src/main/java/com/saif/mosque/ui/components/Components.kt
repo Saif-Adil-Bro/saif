@@ -160,7 +160,7 @@ fun PasswordField(
         trailingIcon = {
             IconButton(onClick = { visible = !visible }) {
                 Icon(
-                    imageVector = if (visible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                    imageVector = if (visible) Icons.Filled.Check else Icons.Filled.Close,
                     contentDescription = null
                 )
             }
@@ -169,6 +169,7 @@ fun PasswordField(
 }
 
 /** Date field with a material3 DatePicker dialog. Value is ISO yyyy-MM-dd. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun DatePickerField(
     label: String,

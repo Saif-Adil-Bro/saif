@@ -88,7 +88,7 @@ class ContributionsViewModel(
         combine(
             repo.observeContributions(mosqueId),
             repo.observeFunds(mosqueId)
-        ) { cs, funds -> UiState.Success(cs to funds) }
+        ) { cs, funds -> UiState.Success(cs to funds) as UiState<Pair<List<Contribution>, List<Fund>>> }
             .catch { emit(UiState.Error(it.message ?: "error")) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 

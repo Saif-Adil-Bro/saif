@@ -32,7 +32,7 @@ class PlatformRepository(
     fun observeMosques(): Flow<List<Mosque>> =
         db.collection("mosques").orderBy("name")
             .snapshotFlow()
-            .map { snap -> snap.toObjects(Mosque::class.java) }
+            .map { it.toObjects(Mosque::class.java) }
 
     /** Create mosque + starter funds + admin atomically; returns one-time credentials. */
     suspend fun createMosque(

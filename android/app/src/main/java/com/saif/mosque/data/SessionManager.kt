@@ -38,13 +38,17 @@ class SessionManager(private val context: Context) {
 
     // ---- login lockout (client-side; pair with Cloud Functions/App Check in prod) ----
 
+    private val locksType = object : com.google.gson.reflect.TypeToken<MutableMap<String, List<Double>>>() {}.type
+
     private suspend fun readLocks(): MutableMap<String, LongArray> {
         val raw = context.sessionDataStore.data.first()[KEY_LOCKS] ?: return mutableMapOf()
-        return runCatching {
-            gson.fromJson(raw, MutableMap::class.java)
-        }.getOrNull()
-            ?.mapValues { (_, v) -> (v as? List<*>)?.map { (it as Number).toLong() }?.toLongArray() ?: longArrayOf(0, 0) }
-            ?.toMutableMap() ?: mutableMapOf()
+        val parsed = runCatching {
+            gson.fromJson<MutableMap<String, List<Double>>>(raw, locksType)
+        }.getOrNull() ?: return mutableMapOf()
+        return parsed.mapValues { (_, v) ->
+            val arr = v.map { it.toLong() }.toLongArray()
+            if (arr.size >= 2) arr else longArrayOf(arr.getOrElse(0) { 0L }, 0L)
+        }.toMutableMap()
     }
 
     private suspend fun writeLocks(locks: Map<String, LongArray>) {

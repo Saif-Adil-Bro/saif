@@ -80,7 +80,7 @@ class TransfersViewModel(
 
     val state: StateFlow<UiState<Pair<List<Transfer>, List<Fund>>>> =
         combine(repo.observeTransfers(mosqueId), repo.observeFunds(mosqueId)) { ts, funds ->
-            UiState.Success(ts to funds)
+            UiState.Success(ts to funds) as UiState<Pair<List<Transfer>, List<Fund>>>
         }
             .catch { emit(UiState.Error(it.message ?: "error")) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)

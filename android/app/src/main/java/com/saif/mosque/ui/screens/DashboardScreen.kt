@@ -49,7 +49,7 @@ import kotlinx.coroutines.flow.stateIn
 
 class DashboardViewModel(repo: DashboardRepository, mosqueId: String) : ViewModel() {
     val state: StateFlow<UiState<DashboardData>> = repo.observeDashboard(mosqueId)
-        .map { UiState.Success(it) }
+        .map { UiState.Success(it) as UiState<DashboardData> }
         .catch { emit(UiState.Error(it.message ?: "error")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 }
