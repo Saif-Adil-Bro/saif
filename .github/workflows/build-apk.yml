@@ -1,7 +1,7 @@
 name: Build Android APK
 
 # Builds the debug APK on every push / PR and uploads it as a downloadable artifact.
-# google-services.json is NOT committed — it is decoded at build time from the
+# google-services.json is NOT committed — it is written at build time from the
 # GOOGLE_SERVICES_JSON repository secret (raw JSON; see README "CI" section).
 
 on:
@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   build-debug-apk:
@@ -65,22 +66,41 @@ jobs:
           gradle-version: 8.10.2
 
       - name: Build debug APK
+        id: build
         working-directory: android
         run: |
           set -o pipefail
-          gradle --no-daemon assembleDebug 2>&1 | tee /tmp/build.log
+          if gradle --no-daemon --console=plain assembleDebug 2>&1 | tee /tmp/build.log; then
+            echo "err=" >> "$GITHUB_OUTPUT"
+          else
+            # capture the first compile/config error lines so they surface in the
+            # next step's name (readable via the Actions jobs API)
+            ERR=$(grep -E '^e:|error:|FAILURE:|What went wrong' /tmp/build.log | head -n 6 | tr '\n' ' ' | head -c 600)
+            echo "err=${ERR}" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: "BUILD RESULT — ${{ steps.build.outputs.err }}"
+        if: always()
+        run: |
+          if [ -n "${{ steps.build.outputs.err }}" ]; then
+            echo "${{ steps.build.outputs.err }}"
+            exit 1
+          fi
 
       - name: Comment build error on the PR (if failed)
         if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          {
-            echo "### :x: Build failed — last 120 lines of the Gradle log"
-            echo '```'
-            tail -n 120 /tmp/build.log
-            echo '```'
-          } | gh pr comment ${{ github.event.pull_request.number }} --body-file -
+          python3 - <<'PY' > /tmp/payload.json
+          import json
+          log = open('/tmp/build.log', errors='replace').read()[-8000:]
+          body = "### :x: Build failed — Gradle log tail\n```\n" + log + "\n```"
+          print(json.dumps({"body": body}))
+          PY
+          gh api -X POST "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" --input /tmp/payload.json || echo "PR comment failed (token may be read-only)"
 
       - name: Upload APK artifact
         if: success()
@@ -103,7 +123,7 @@ jobs:
   #       run: |
   #         echo "sdk.dir=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" > android/local.properties
   #         yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-  #         "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" 
+  #         "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
   #     - name: Write google-services.json from secret
   #       env: { GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }} }
   #       run: printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
