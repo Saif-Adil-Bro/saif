@@ -3,7 +3,7 @@ package com.saif.mosque.data.repository
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.snapshotFlow
+import com.saif.mosque.util.snapshotsFlow
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser
 import com.saif.mosque.data.model.Contribution
@@ -41,31 +41,31 @@ class LedgerRepository(
     // ---------- streams ----------
 
     fun observeFunds(mosqueId: String): Flow<List<Fund>> =
-        coll(mosqueId, "funds").orderBy("name").snapshotFlow()
+        coll(mosqueId, "funds").orderBy("name").snapshotsFlow()
             .map { it.toObjects(Fund::class.java) }
 
     fun observeDonors(mosqueId: String): Flow<List<Donor>> =
-        coll(mosqueId, "donors").orderBy("name").snapshotFlow()
+        coll(mosqueId, "donors").orderBy("name").snapshotsFlow()
             .map { it.toObjects(Donor::class.java) }
 
     fun observeContributions(mosqueId: String): Flow<List<Contribution>> =
         coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotFlow().map { it.toObjects(Contribution::class.java) }
+            .snapshotsFlow().map { it.toObjects(Contribution::class.java) }
 
     fun observeExpenses(mosqueId: String): Flow<List<Expense>> =
         coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotFlow().map { it.toObjects(Expense::class.java) }
+            .snapshotsFlow().map { it.toObjects(Expense::class.java) }
 
     fun observeTransfers(mosqueId: String): Flow<List<Transfer>> =
         coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotFlow().map { it.toObjects(Transfer::class.java) }
+            .snapshotsFlow().map { it.toObjects(Transfer::class.java) }
 
     fun observeMembers(mosqueId: String): Flow<List<AppUser>> =
-        db.collection("users").whereEqualTo("mosqueId", mosqueId).snapshotFlow()
+        db.collection("users").whereEqualTo("mosqueId", mosqueId).snapshotsFlow()
             .map { it.toObjects(AppUser::class.java) }
 
     fun observeMosque(mosqueId: String): Flow<Mosque?> =
-        mosqueRef(mosqueId).snapshotFlow().map { it.toObject(Mosque::class.java) }
+        mosqueRef(mosqueId).snapshotsFlow().map { it.toObject(Mosque::class.java) }
 
     // ---------- funds ----------
 

@@ -6,7 +6,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.auth.authStateFlow
+import com.saif.mosque.util.authStateChangesFlow
 import com.saif.mosque.R
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser
@@ -28,7 +28,7 @@ class AuthRepository(
     private val session: SessionManager
 ) {
     /** Firebase auth state stream. */
-    val authState: Flow<com.google.firebase.auth.FirebaseUser?> = auth.authStateFlow()
+    val authState: Flow<com.google.firebase.auth.FirebaseUser?> = auth.authStateChangesFlow()
 
     /** Cached profile (role, mosqueId) for instant navigation. */
     val cachedUser: Flow<AppUser?> = session.userFlow

@@ -4,7 +4,7 @@ import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.snapshotFlow
+import com.saif.mosque.util.snapshotsFlow
 import com.saif.mosque.R
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser
@@ -31,7 +31,7 @@ class PlatformRepository(
 
     fun observeMosques(): Flow<List<Mosque>> =
         db.collection("mosques").orderBy("name")
-            .snapshotFlow()
+            .snapshotsFlow()
             .map { it.toObjects(Mosque::class.java) }
 
     /** Create mosque + starter funds + admin atomically; returns one-time credentials. */
