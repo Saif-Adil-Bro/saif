@@ -81,6 +81,38 @@ unimplemented. The emulator security baseline and migration acceptance criteria 
 [`android/rules-tests/README.md`](android/rules-tests/README.md). Do not switch a
 production project to permissive rules as a workaround.
 
+## Read-only ledger audit
+
+Before any accounting migration, take a secure backup and obtain a complete,
+consistent tenant snapshot with your approved export process. The optional local
+audit below compares balances, donor totals and counters using integer poisha.
+It makes no Firebase calls, does not change or repair data, and is not a backup.
+Keep exports containing personal data out of the repository and protect them.
+
+```sh
+node android/scripts/audit-ledger.mjs /path/to/tenant-snapshot.json
+```
+
+The JSON must contain `mosque` (including its `id` and totals/counters), and the
+arrays `funds`, `donors`, `contributions`, `expenses` and `transfers`. Each record
+must include its document `id` and `mosqueId`; include all archived records and
+all historical ledger rows. An optional `members` array enables member-count
+checking. Optional `openingFunds` and `openingDonors` objects map document IDs to
+opening values in taka. Example empty snapshot:
+
+```json
+{"mosque":{"id":"example","totalBalance":0,"fundCount":0,"donorCount":0,"memberCount":0},
+ "funds":[],"donors":[],"contributions":[],"expenses":[],"transfers":[],"members":[],
+ "openingFunds":{},"openingDonors":{}}
+```
+
+Omitted opening amounts are assumed zero; a clean result is meaningful only if
+those assumptions and the completeness/consistency of the snapshot are correct.
+Historical deletions or concurrent writes during an export can make the result
+misleading. Exit status is 0 for no issues, 1 for reported issues/incomplete data,
+and 2 for invalid input. Investigate discrepancies manually; never automatically
+replace production balances from this report.
+
 ## Security and accounting behavior
 
 - Firestore rules permit users to read their own profile and active tenant data;
