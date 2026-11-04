@@ -60,12 +60,14 @@ class ResponsiveComponentsTest {
     @Test fun failedPendingItemShowsReasonAndCanBeRetried() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         var retries = 0
-        val draft = DirectoryDraft("id", "u", "m", "funds", "Pending fund", "{}", 1L, "BLOCKED", "PERMISSION")
+        val draft = DirectoryDraft("id", "u", "m", "donors", "Pending donor", "{\"phone\":\"01234567890\",\"address\":\"Old road\"}", 1L, "BLOCKED", "CONFLICT", action = "update")
         compose.setContent {
             MosqueTheme { PendingDirectory(listOf(draft), online = true, onRetry = { retries++ }) }
         }
         compose.onNodeWithText(context.getString(R.string.pending_count, 1)).performClick()
-        compose.onNodeWithText("Pending fund").assertIsDisplayed()
+        compose.onNodeWithText("Pending donor").assertIsDisplayed()
+        compose.onNodeWithText("01234567890\nOld road").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.sync_conflict_help)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.sync_unconfirmed)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.retry)).performClick()
         compose.runOnIdle { assertEquals(1, retries) }

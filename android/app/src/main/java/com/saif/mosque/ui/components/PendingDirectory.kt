@@ -22,6 +22,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.saif.mosque.R
 import com.saif.mosque.data.outbox.DirectoryDraft
+import com.saif.mosque.data.model.Donor
+import com.saif.mosque.data.model.Fund
+import com.google.gson.Gson
 
 /** Pending rows are clearly separated from acknowledged Firestore records and balances. */
 @Composable
@@ -44,6 +47,10 @@ fun PendingDirectory(drafts: List<DirectoryDraft>, online: Boolean, onRetry: (Di
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(draft.name, style = MaterialTheme.typography.titleSmall)
+                                val details = remember(draft.kind, draft.payload) { pendingDetails(draft) }
+                                if (details.isNotBlank()) Text(details, style = MaterialTheme.typography.bodySmall)
+                                val inactive = remember(draft.kind, draft.payload) { pendingInactive(draft) }
+                                if (inactive) Text(stringResource(R.string.inactive), style = MaterialTheme.typography.labelSmall)
                                 Text(stringResource(when (draft.action) {
                                     "update" -> R.string.pending_update
                                     "archive" -> R.string.pending_archive
@@ -80,3 +87,25 @@ fun PendingDirectory(drafts: List<DirectoryDraft>, online: Boolean, onRetry: (Di
         )
     }
 }
+
+/** The draft is account-scoped; show entered values so a conflict can be re-entered safely. */
+private fun pendingDetails(draft: DirectoryDraft): String = runCatching {
+    val gson = Gson()
+    when (draft.kind) {
+        "funds" -> gson.fromJson(draft.payload, Fund::class.java).let {
+            listOf(it.code, it.nameEn, it.description).filter { value -> !value.isNullOrBlank() }.distinct().joinToString("\n")
+        }
+        "donors" -> gson.fromJson(draft.payload, Donor::class.java).let {
+            listOf(it.phone, it.address).filter { value -> !value.isNullOrBlank() }.distinct().joinToString("\n")
+        }
+        else -> ""
+    }
+}.getOrDefault("")
+
+private fun pendingInactive(draft: DirectoryDraft): Boolean = runCatching {
+    when (draft.kind) {
+        "funds" -> !Gson().fromJson(draft.payload, Fund::class.java).active
+        "donors" -> !Gson().fromJson(draft.payload, Donor::class.java).active
+        else -> false
+    }
+}.getOrDefault(false)

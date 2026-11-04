@@ -238,7 +238,7 @@
     <string name="sync_check_permission">Check access and connection. It may already have reached the server.</string>
     <string name="sync_check_record">Check the online record before retrying; it may already have reached the server.</string>
     <string name="local_pending_saved">Saved on device; waiting to sync.</string>
-    <string name="local_save_failed">Could not save on this device. Check storage and try again.</string>
+    <string name="local_save_failed">Could not save on this device. Check the details and storage, then try again.</string>
     <string name="saving">Saving…</string>
     <string name="close">Close</string>
     <string name="pending_add">New record</string>
