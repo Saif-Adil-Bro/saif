@@ -4,7 +4,7 @@ import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ktx.snapshotFlow
+import com.google.firebase.firestore.snapshotFlow
 import com.saif.mosque.R
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser

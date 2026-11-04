@@ -6,7 +6,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.auth.ktx.authStateFlow
+import com.google.firebase.auth.authStateFlow
 import com.saif.mosque.R
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser

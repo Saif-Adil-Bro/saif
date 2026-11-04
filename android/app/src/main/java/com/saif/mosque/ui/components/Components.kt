@@ -159,10 +159,7 @@ fun PasswordField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {
             IconButton(onClick = { visible = !visible }) {
-                Icon(
-                    imageVector = if (visible) Icons.Filled.Check else Icons.Filled.Close,
-                    contentDescription = null
-                )
+                Text(if (visible) "🙈" else "👁", style = MaterialTheme.typography.bodyLarge)
             }
         }
     )

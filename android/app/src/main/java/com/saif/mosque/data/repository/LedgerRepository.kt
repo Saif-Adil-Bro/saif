@@ -3,7 +3,7 @@ package com.saif.mosque.data.repository
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.ktx.snapshotFlow
+import com.google.firebase.firestore.snapshotFlow
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser
 import com.saif.mosque.data.model.Contribution
