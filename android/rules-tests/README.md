@@ -17,6 +17,24 @@ firebase emulators:exec --project demo-mosque-rules --config ../firebase.json --
 The demo project ID and emulator prevent access to a real Firebase project. The
 suite clears emulator data before each test. Do not point these tests at production.
 
+## Isolated ledger prototype (do not deploy)
+
+`ledger-prototype.rules` is a **test-only** experiment, not the production rules
+configured by `firebase.json`. It explores append-only contribution, expense and
+transfer creates with integer-poisha balances and atomic Firestore invariants.
+`ledger-prototype.test.mjs` exercises authorized writes, replay, tampering,
+tenant isolation, overdraft and concurrent spending using the emulator.
+
+It is not wired into the Android app and does not yet support edits, deletes,
+offline queueing, historical-data migration or full calendar-date validation.
+The experiment uses new `balancePoisha`, `totalBalancePoisha` and
+`totalDonatedPoisha` aggregate fields alongside the existing taka fields. The
+current callable backend does not maintain these fields, so mixing the two would
+corrupt the prototype's assumptions. Never deploy or point production traffic at
+this file. A safe migration must freeze or upgrade all writers, back up and
+reconcile historic data, initialize and verify integer fields, and test the
+matching client, rules, concurrency, retries and rollout/rollback together.
+
 ## Spark migration acceptance criteria
 
 Before replacing the callable backend, extend these emulator tests to cover both

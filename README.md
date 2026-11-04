@@ -82,8 +82,10 @@ A safe migration
 requires client transaction changes, matching Firestore rules, and provisioning
 changes. Offline-first ledger creation/editing and automatic ledger synchronization
 also remain unimplemented. The emulator security baseline and migration acceptance criteria are in
-[`android/rules-tests/README.md`](android/rules-tests/README.md). Do not switch a
-production project to permissive rules as a workaround.
+[`android/rules-tests/README.md`](android/rules-tests/README.md). An isolated,
+append-only integer-poisha ledger rules prototype is being tested there; it is not
+used by the app and must not be deployed. Do not switch a production project to
+permissive rules as a workaround.
 
 ## Read-only ledger audit
 
