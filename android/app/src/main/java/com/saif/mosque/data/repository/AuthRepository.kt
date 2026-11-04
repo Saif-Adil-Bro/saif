@@ -46,14 +46,15 @@ class AuthRepository(
             val snap = db.collection("users").document(uid).get().await()
             if (!snap.exists()) {
                 auth.signOut()
-                return Result.failure(AuthException(R.string.login_failed))
+                return Result.failure(AuthException(R.string.login_failed,
+                    "profile doc users/$uid not found — run the seed script or create it manually"))
             }
             val user = snap.toObject(AppUser::class.java)?.copy(id = uid)
-                ?: return Result.failure(AuthException(R.string.login_failed))
+                ?: return Result.failure(AuthException(R.string.login_failed, "profile parse failed for users/$uid"))
 
             if (!user.active) {
                 auth.signOut()
-                return Result.failure(AuthException(R.string.permission_denied))
+                return Result.failure(AuthException(R.string.permission_denied, "user inactive in users/$uid"))
             }
 
             // spec 2.3: users of an inactive mosque cannot stay signed in
@@ -61,7 +62,8 @@ class AuthRepository(
                 val mosqueSnap = db.collection("mosques").document(user.mosqueId).get().await()
                 if (!mosqueSnap.exists() || mosqueSnap.getBoolean("active") != true) {
                     auth.signOut()
-                    return Result.failure(AuthException(R.string.mosque_inactive))
+                    return Result.failure(AuthException(R.string.mosque_inactive,
+                        "mosque ${user.mosqueId} missing or inactive"))
                 }
             }
 
