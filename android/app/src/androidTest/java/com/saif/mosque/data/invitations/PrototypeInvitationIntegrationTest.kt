@@ -44,7 +44,7 @@ class PrototypeInvitationIntegrationTest {
         login("inv-admin@example.test")
         val queue = PrototypeInvitationQueue(app, auth)
         val queued = PrototypeInvitation(service.newId("invite-test"), "invite-test", "inv-admin",
-            "queue@example.test", "Offline draft", "", Role.MEMBER, "", Timestamp(Date(System.currentTimeMillis() + 86_400_000)))
+            "inv-new@example.test", "Offline draft", "", Role.MEMBER, "", Timestamp(Date(System.currentTimeMillis() + 86_400_000)))
         suspend fun syncInvitation(d: PrototypeInvitation): ListenableWorker.Result =
             TestListenableWorkerBuilder<PrototypeInvitationWorker>(app).setInputData(workDataOf(
                 "id" to d.id, "uid" to d.issuerUid, "mosqueId" to d.mosqueId)).build().doWork()
@@ -65,8 +65,11 @@ class PrototypeInvitationIntegrationTest {
         queue.store.writableDatabase.update("invites", values, "id = ?", arrayOf(queued.id))
         assertEquals(ListenableWorker.Result.success(), syncInvitation(queued))
         assertEquals("READY", queue.store.find(queued.id, queued.issuerUid, queued.mosqueId)?.state)
-        service.revoke("invite-test", queued.id, "inv-admin")
-        assertEquals(PrototypeInvitationStatus.REVOKED, queue.checkSharingStatus(queued))
+        val queuedRevoked = queued.copy(id = service.newId("invite-test"), email = "queue@example.test")
+        queue.store.enqueue(queuedRevoked)
+        assertEquals(ListenableWorker.Result.success(), syncInvitation(queuedRevoked))
+        service.revoke("invite-test", queuedRevoked.id, "inv-admin")
+        assertEquals(PrototypeInvitationStatus.REVOKED, queue.checkSharingStatus(queuedRevoked))
         assertEquals(1L, parent.get(Source.SERVER).await().getLong("memberCount"))
         val invitation = PrototypeInvitation(service.newId("invite-test"), "invite-test", "inv-admin",
             "inv-member@example.test", "Member", "", Role.MEMBER, "", Timestamp(Date(System.currentTimeMillis() + 86_400_000)))
@@ -109,8 +112,9 @@ class PrototypeInvitationIntegrationTest {
         assertEquals(2L, parent.get(Source.SERVER).await().getLong("memberCount"))
 
         // Sign up in a separate FirebaseApp: the signed-in admin is unaffected.
-        val nextInvite = invitation.copy(id=service.newId("invite-test"), email="inv-new@example.test")
-        service.issue(nextInvite)
+        // The offline draft above is the same invitation used for the complete join flow.
+        val nextInvite = queued
+        assertEquals(PrototypeInvitationStatus.PENDING, queue.checkSharingStatus(nextInvite))
         assertTrue(runCatching { PrototypeOnboardingSession(auth, db) }.isFailure)
         val onboardingApp = PrototypeOnboardingEnvironment.get(app)
         assertEquals(onboardingApp, PrototypeOnboardingEnvironment.get(app))
@@ -173,6 +177,7 @@ class PrototypeInvitationIntegrationTest {
         afterCommit.redeem()
         assertEquals(PrototypeJoinPhase.COMPLETE, afterCommit.state.value.phase)
         assertEquals("inv-admin", auth.currentUser?.uid)
+        assertEquals(PrototypeInvitationStatus.ACCEPTED, queue.checkSharingStatus(nextInvite))
         assertEquals(3L, parent.get(Source.SERVER).await().getLong("memberCount"))
         val joinedUser = db.collection("users").document(secondaryAuth.currentUser!!.uid)
         assertTrue(joinedUser.get(Source.SERVER).await().exists())
