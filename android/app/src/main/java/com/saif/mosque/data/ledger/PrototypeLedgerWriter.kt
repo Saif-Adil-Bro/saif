@@ -21,7 +21,7 @@ data class PrototypeLedgerDraft(
  */
 class PrototypeLedgerWriter(private val db: FirebaseFirestore, private val currentUid: () -> String?) {
     suspend fun commit(draft: PrototypeLedgerDraft) {
-        validate(draft)
+        validatePrototypeDraft(draft)
         if (currentUid() != draft.uid) throw LedgerIdentityChanged()
         val parent = db.collection("mosques").document(draft.mosqueId)
         val operation = parent.collection(draft.kind).document(draft.id)
@@ -84,20 +84,6 @@ class PrototypeLedgerWriter(private val db: FirebaseFirestore, private val curre
         return n
     }
 
-    private fun validate(d: PrototypeLedgerDraft) {
-        fun id(s: String) = s.isNotBlank() && s.length <= 1500 && !s.contains('/')
-        fun text(s: String) = s.length <= 1000
-        require(id(d.id) && id(d.uid) && id(d.mosqueId) && id(d.sourceFundId))
-        require(d.kind in setOf("contributions", "expenses", "transfers"))
-        require(d.amountPoisha in 1..LedgerMath.MAX_POISHA)
-        require(listOf(d.note, d.receiptNo, d.donorName, d.title, d.category, d.paidTo).all(::text))
-        require(d.createdAt >= 0 && runCatching { LocalDate.parse(d.date).toString() == d.date }.getOrDefault(false))
-        when (d.kind) {
-            "contributions" -> require(d.donorName.isNotBlank() && (d.donorId.isEmpty() || id(d.donorId)))
-            "expenses" -> require(d.title.isNotBlank())
-            "transfers" -> require(id(d.destinationFundId) && d.destinationFundId != d.sourceFundId)
-        }
-    }
     private fun record(d: PrototypeLedgerDraft): Map<String, Any> {
         val base = mapOf<String, Any>("mosqueId" to d.mosqueId, "amountPoisha" to d.amountPoisha,
             "amount" to LedgerMath.taka(d.amountPoisha), "date" to d.date, "note" to d.note,
@@ -109,6 +95,20 @@ class PrototypeLedgerWriter(private val db: FirebaseFirestore, private val curre
                 "paidTo" to d.paidTo, "receiptNo" to d.receiptNo, "status" to "approved", "approvedBy" to "")
             else -> mapOf("fromAccountId" to d.sourceFundId, "toAccountId" to d.destinationFundId)
         }
+    }
+}
+internal fun validatePrototypeDraft(d: PrototypeLedgerDraft) {
+    fun id(s: String) = s.isNotBlank() && s.length <= 1500 && !s.contains('/')
+    fun text(s: String) = s.length <= 1000
+    require(id(d.id) && id(d.uid) && id(d.mosqueId) && id(d.sourceFundId))
+    require(d.kind in setOf("contributions", "expenses", "transfers"))
+    require(d.amountPoisha in 1..LedgerMath.MAX_POISHA)
+    require(listOf(d.note, d.receiptNo, d.donorName, d.title, d.category, d.paidTo).all(::text))
+    require(d.createdAt >= 0 && runCatching { LocalDate.parse(d.date).toString() == d.date }.getOrDefault(false))
+    when (d.kind) {
+        "contributions" -> require(d.donorName.isNotBlank() && (d.donorId.isEmpty() || id(d.donorId)))
+        "expenses" -> require(d.title.isNotBlank())
+        "transfers" -> require(id(d.destinationFundId) && d.destinationFundId != d.sourceFundId)
     }
 }
 class LedgerIdentityChanged : IllegalStateException("Signed-in account changed")

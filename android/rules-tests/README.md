@@ -28,8 +28,10 @@ tenant isolation, overdraft and concurrent spending using the emulator.
 The isolated `PrototypeLedgerWriter` exercises Android Firestore transactions,
 exact retry payloads, integer arithmetic and missing-migration refusal against
 these rules in a separately started Auth/Firestore emulator. It is **not wired
-into the app's repository, UI or offline queue** and does not yet support edits,
-deletes, offline queueing, historical-data migration or full rules-level
+into the app's repository or UI**. A separate experimental SQLite outbox stores
+immutable UID/mosque-scoped drafts and is excluded from backup, but it has no
+worker or UI yet and does not sync. The prototype does not yet support edits,
+deletes, historical-data migration or full rules-level
 calendar-date validation.
 The experiment uses new `balancePoisha`, `totalBalancePoisha` and
 `totalDonatedPoisha` aggregate fields alongside the existing taka fields. The
