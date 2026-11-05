@@ -257,4 +257,12 @@
     <string name="ledger_queue_blocked">Resolve the first blocked item before later ledger entries can sync.</string>
     <string name="ledger_wait_migration">This mosque is not yet ready for the new ledger. This draft will retry after setup is confirmed.</string>
     <string name="ledger_migration_required">Ledger setup is incomplete. Ask an administrator to reconcile and migrate the balances.</string>
+    <string name="invitation_join_title">Join with invitation</string>
+    <string name="invitation_code">Invitation code</string>
+    <string name="invitation_code_help">Paste the code from your mosque administrator.</string>
+    <string name="invitation_code_invalid">Check the invitation code and try again.</string>
+    <string name="invitation_continue">Continue</string>
+    <string name="invitation_share_title">Invitation</string>
+    <string name="invitation_share_help">Share with the invited member. They must verify the invited email.</string>
+    <string name="invitation_copy">Copy</string>
 </resources>

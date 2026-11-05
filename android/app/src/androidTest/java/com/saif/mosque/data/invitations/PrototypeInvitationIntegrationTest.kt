@@ -120,8 +120,9 @@ class PrototypeInvitationIntegrationTest {
         }
         secondaryAuth.applyActionCode(code).await()
         assertEquals(PrototypeVerificationResult.ALREADY_VERIFIED, onboarding.resendVerification())
-        onboarding.redeem("invite-test", nextInvite.id)
-        onboarding.redeem("invite-test", nextInvite.id)
+        val address = InvitationCode.decode(InvitationCode.encode(InvitationAddress("invite-test", nextInvite.id)))!!
+        onboarding.redeem(address.mosqueId, address.invitationId)
+        onboarding.redeem(address.mosqueId, address.invitationId)
         assertEquals("inv-admin", auth.currentUser?.uid)
         assertEquals(3L, parent.get(Source.SERVER).await().getLong("memberCount"))
         assertTrue(db.collection("users").document(secondaryAuth.currentUser!!.uid).get(Source.SERVER).await().exists())

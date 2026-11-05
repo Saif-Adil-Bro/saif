@@ -106,7 +106,10 @@ invitation and claim on retry, rather than incrementing the counter twice. It is
 exercised against dedicated Auth and Firestore emulators. A separate, stable
 named FirebaseApp prototype lets a prospective member sign up, resend verification,
 re-sign in after partial failure and redeem without replacing the primary admin
-session; it never automatically deletes an Auth account. This is not wired into
+session; it never automatically deletes an Auth account. A versioned copyable
+invitation code carries only the mosque and invitation IDs: it is not a bearer
+credential and still requires the exact verified email. Experimental share and
+entry dialogs are tested but not routed from the app. This is not wired into
 the app UI, a durable queue or deployed rules.
 
 A production design still needs an invitation sharing/discovery and email

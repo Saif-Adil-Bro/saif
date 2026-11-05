@@ -227,4 +227,12 @@
     <string name="ledger_queue_blocked">পরের হিসাব সিঙ্ক করতে প্রথমে আটকে থাকা তথ্যটি সমাধান করুন।</string>
     <string name="ledger_wait_migration">এই মসজিদে নতুন হিসাবের সেটআপ এখনও প্রস্তুত নয়। নিশ্চিত হলে খসড়াটি আবার সিঙ্কের চেষ্টা করবে।</string>
     <string name="ledger_migration_required">হিসাবের সেটআপ সম্পূর্ণ নয়। প্রশাসককে ব্যালেন্স যাচাই ও স্থানান্তর করতে বলুন।</string>
+    <string name="invitation_join_title">আমন্ত্রণে যোগ দিন</string>
+    <string name="invitation_code">আমন্ত্রণ কোড</string>
+    <string name="invitation_code_help">মসজিদের প্রশাসকের দেওয়া কোডটি লিখুন।</string>
+    <string name="invitation_code_invalid">আমন্ত্রণ কোডটি ঠিক করে আবার চেষ্টা করুন।</string>
+    <string name="invitation_continue">এগিয়ে যান</string>
+    <string name="invitation_share_title">আমন্ত্রণ</string>
+    <string name="invitation_share_help">আমন্ত্রিত সদস্যকে পাঠান। তাঁকে নির্দিষ্ট ইমেইল যাচাই করতে হবে।</string>
+    <string name="invitation_copy">কপি</string>
 </resources>
