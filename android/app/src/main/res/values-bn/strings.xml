@@ -198,7 +198,7 @@
     <string name="profile">প্রোফাইল</string>
     <string name="you">আপনি</string>
     <string name="admin_details">অ্যাডমিনের তথ্য</string>
-    <string name="offline_read_only">অফলাইন: তহবিল ও দাতার পরিবর্তন ডিভাইসে রাখা যাবে। অন্য পরিবর্তনে সংযোগ প্রয়োজন।</string>
+    <string name="offline_read_only">অফলাইন: তহবিল, দাতা ও নতুন আয়–ব্যয়ের তথ্য ডিভাইসে রাখা যাবে। সিঙ্কের পর ব্যালেন্স নিশ্চিত হবে।</string>
     <string name="offline_login_required">অ্যাপ ব্যবহারের আগে ইন্টারনেট সংযোগ দিয়ে অ্যাকাউন্ট যাচাই করুন।</string>
     <string name="pending_count">সিঙ্ক অপেক্ষায়: %1$d</string>
     <string name="pending_title">সিঙ্ক অপেক্ষায়</string>
@@ -217,4 +217,5 @@
     <string name="sync_conflict_help">অন্য জায়গায় তথ্যটি বদলেছে। এই স্থানীয় খসড়া বাদ দিয়ে সর্বশেষ তথ্য সম্পাদনা করুন।</string>
     <string name="discard_local">স্থানীয় খসড়া বাদ</string>
     <string name="discard_local_warning">এই ডিভাইসের খসড়াটি বাদ দেবেন? এটি আগে পাঠানো হয়ে থাকলে পরে অনলাইনে দেখা যেতে পারে। অনলাইন পরিবর্তন এতে ফিরবে না।</string>
+    <string name="ledger_migration_required">হিসাবের সেটআপ সম্পূর্ণ নয়। প্রশাসককে ব্যালেন্স যাচাই ও স্থানান্তর করতে বলুন।</string>
 </resources>

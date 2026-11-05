@@ -17,6 +17,7 @@ class AppContainer(val context: Context) {
     val outbox = com.saif.mosque.data.outbox.DirectoryOutbox.get(context)
 
     val auth: FirebaseAuth = FirebaseAuth.getInstance()
+    val ledgerQueue by lazy { com.saif.mosque.data.ledger.LedgerQueue(context, auth) }
 
     val db: FirebaseFirestore by lazy {
         FirebaseFirestore.getInstance().apply {

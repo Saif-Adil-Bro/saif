@@ -228,7 +228,7 @@
     <string name="profile">Profile</string>
     <string name="you">You</string>
     <string name="admin_details">Admin details</string>
-    <string name="offline_read_only">Offline: fund and donor changes can be saved on this device. Other changes need a connection.</string>
+    <string name="offline_read_only">Offline: fund and donor changes and new ledger entries can be saved on this device. Balances are confirmed after sync.</string>
     <string name="offline_login_required">Connect to the internet to verify your account before using the app.</string>
     <string name="pending_count">Pending sync: %1$d</string>
     <string name="pending_title">Pending sync</string>
@@ -247,4 +247,5 @@
     <string name="sync_conflict_help">This record changed elsewhere. Discard this local draft and edit the latest record.</string>
     <string name="discard_local">Discard local</string>
     <string name="discard_local_warning">Remove this draft from this device? It may already have been sent and could appear online later. This does not undo online changes.</string>
+    <string name="ledger_migration_required">Ledger setup is incomplete. Ask an administrator to reconcile and migrate the balances.</string>
 </resources>

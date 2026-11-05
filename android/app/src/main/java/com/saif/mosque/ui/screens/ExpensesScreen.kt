@@ -80,6 +80,7 @@ import java.time.LocalDate
 
 class ExpensesViewModel(
     private val repo: LedgerRepository,
+    private val queue: com.saif.mosque.data.ledger.LedgerQueue,
     private val mosqueId: String,
     private val user: AppUser
 ) : ViewModel() {
@@ -94,14 +95,27 @@ class ExpensesViewModel(
 
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
+    val pending = queue.store.observe(user.id, mosqueId, "expenses")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun retry(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.retry(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
+    fun discard(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.discard(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
 
-    fun add(e: Expense, done: (Msg?) -> Unit) = mutate(done) { repo.addExpense(mosqueId, e, user.id) }
+    fun add(e: Expense, done: (Msg?) -> Unit) = mutate(done, local = true) {
+        queue.enqueue(com.saif.mosque.data.ledger.PrototypeLedgerDraft(id = java.util.UUID.randomUUID().toString(), uid = user.id, mosqueId = mosqueId,
+            kind = "expenses", amountPoisha = com.saif.mosque.data.ledger.LedgerMath.poisha(e.amount, true),
+            sourceFundId = e.accountId, title = e.title, category = e.category, paidTo = e.paidTo,
+            receiptNo = e.receiptNo, date = e.date, note = e.note, createdAt = System.currentTimeMillis()))
+    }
     fun update(old: Expense, e: Expense, done: (Msg?) -> Unit) = mutate(done) { repo.updateExpense(mosqueId, old, e, user.id) }
     fun delete(e: Expense) = mutate(null) { repo.deleteExpense(mosqueId, e) }
 
-    private fun mutate(done: ((Msg?) -> Unit)?, block: suspend () -> Unit) {
+    private fun mutate(done: ((Msg?) -> Unit)?, local: Boolean = false, block: suspend () -> Unit) {
         viewModelScope.launch {
-            try { block(); done?.invoke(null); _messages.emit(Msg.Res(R.string.saved_ok)) }
+            try { block(); done?.invoke(null); _messages.emit(Msg.Res(if (local) R.string.local_pending_saved else R.string.saved_ok)) }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) {
                 val error = if (e is InsufficientBalanceException) Msg.Res(R.string.insufficient_balance)
@@ -115,8 +129,10 @@ class ExpensesViewModel(
 @Composable
 fun ExpensesScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
-    val vm: ExpensesViewModel = viewModel { ExpensesViewModel(container.ledgerRepository, mosqueId, user) }
-    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
+    val vm: ExpensesViewModel = viewModel { ExpensesViewModel(container.ledgerRepository, container.ledgerQueue, mosqueId, user) }
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canEdit = vm.canEdit && !offline
+    val pending by vm.pending.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -140,12 +156,15 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (canEdit) FloatingActionButton(onClick = { editing = Expense(date = Format.todayIso()) }) {
+            if (vm.canEdit) FloatingActionButton(onClick = { editing = Expense(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_expense))
             }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+        com.saif.mosque.ui.components.PendingLedger(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
         StateBox(state) { (all, funds) ->
             val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", ym.first, ym.second)
             val list = all
@@ -153,7 +172,7 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
                 .filter { fundFilter == null || it.accountId == fundFilter }
 
             LazyColumn(
-                Modifier.fillMaxSize().padding(inner).padding(16.dp),
+                Modifier.fillMaxSize().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
@@ -193,6 +212,8 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
                         onDelete = if (canEdit) ({ deleting = e }) else null)
                 }
             }
+        }
+    }
         }
     }
 
@@ -270,7 +291,7 @@ internal fun ExpenseFormDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
                 if (Validators.required(title) != null) { error = "required"; return@TextButton }
                 if (accountId.isBlank()) { error = "required"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }

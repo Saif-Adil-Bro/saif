@@ -14,6 +14,9 @@ import android.content.Context
 import com.saif.mosque.R
 import com.saif.mosque.data.outbox.DirectoryDraft
 import com.saif.mosque.ui.components.PendingDirectory
+import com.saif.mosque.ui.components.PendingLedger
+import com.saif.mosque.data.ledger.PrototypeLedgerDraft
+import com.saif.mosque.data.ledger.PrototypeQueuedLedger
 import org.junit.Assert.assertEquals
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -55,6 +58,23 @@ class ResponsiveComponentsTest {
         }
         compose.onNodeWithText("৳১২৩.০০").assertIsDisplayed()
         compose.onNodeWithText("৳৪৫.০০").assertIsDisplayed()
+    }
+
+    @Test fun blockedFinancialDraftShowsReasonAndRetainsDetails() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        var retries = 0
+        val draft = PrototypeLedgerDraft(id="expense", uid="u", mosqueId="m", kind="expenses", amountPoisha=1234,
+            sourceFundId="f", title="Rent", date="2026-11-05", note="Local note", createdAt=1)
+        compose.setContent {
+            MosqueTheme { PendingLedger(listOf(PrototypeQueuedLedger(draft, "BLOCKED", "INSUFFICIENT")),
+                online=true, onRetry={ retries++ }, onDiscard={}) }
+        }
+        compose.onNodeWithText(context.getString(R.string.pending_count, 1)).performClick()
+        compose.onNodeWithText("Rent").assertIsDisplayed()
+        compose.onNodeWithText("Local note").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.insufficient_balance)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.retry)).performClick()
+        compose.runOnIdle { assertEquals(1, retries) }
     }
 
     @Test fun failedPendingItemShowsReasonAndCanBeRetried() {

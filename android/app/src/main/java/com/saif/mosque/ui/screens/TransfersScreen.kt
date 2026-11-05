@@ -73,6 +73,7 @@ import kotlinx.coroutines.launch
 
 class TransfersViewModel(
     private val repo: LedgerRepository,
+    private val queue: com.saif.mosque.data.ledger.LedgerQueue,
     private val mosqueId: String,
     private val user: AppUser
 ) : ViewModel() {
@@ -87,13 +88,24 @@ class TransfersViewModel(
 
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
+    val pending = queue.store.observe(user.id, mosqueId, "transfers")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun retry(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.retry(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
+    fun discard(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.discard(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
 
     fun add(t: Transfer, done: (Msg?) -> Unit) {
         viewModelScope.launch {
             try {
-                repo.addTransfer(mosqueId, t, user.id)
+                queue.enqueue(com.saif.mosque.data.ledger.PrototypeLedgerDraft(id = java.util.UUID.randomUUID().toString(), uid = user.id, mosqueId = mosqueId,
+            kind = "transfers", amountPoisha = com.saif.mosque.data.ledger.LedgerMath.poisha(t.amount, true),
+                    sourceFundId = t.fromAccountId, destinationFundId = t.toAccountId,
+                    date = t.date, note = t.note, createdAt = System.currentTimeMillis()))
                 done(null)
-                _messages.emit(Msg.Res(R.string.saved_ok))
+                _messages.emit(Msg.Res(R.string.local_pending_saved))
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) {
                 done(when (e) {
@@ -116,8 +128,10 @@ class TransfersViewModel(
 @Composable
 fun TransfersScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
-    val vm: TransfersViewModel = viewModel { TransfersViewModel(container.ledgerRepository, mosqueId, user) }
-    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
+    val vm: TransfersViewModel = viewModel { TransfersViewModel(container.ledgerRepository, container.ledgerQueue, mosqueId, user) }
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canEdit = vm.canEdit && !offline
+    val pending by vm.pending.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -139,18 +153,21 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (canEdit) FloatingActionButton(onClick = { editing = Transfer(date = Format.todayIso()) }) {
+            if (vm.canEdit) FloatingActionButton(onClick = { editing = Transfer(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_transfer))
             }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+        com.saif.mosque.ui.components.PendingLedger(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
         StateBox(state) { (transfers, funds) ->
             if (transfers.isEmpty()) {
                 EmptyBox()
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize().padding(inner).padding(16.dp),
+                    Modifier.fillMaxSize().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
@@ -165,6 +182,8 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
                     }
                 }
             }
+        }
+    }
         }
     }
 
@@ -228,7 +247,7 @@ internal fun TransferFormDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving, onClick = {
                 if (fromId.isBlank() || toId.isBlank() || fromId == toId) { error = "same"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
                 onSave(Transfer(fromAccountId = fromId, toAccountId = toId,

@@ -80,6 +80,7 @@ import java.time.LocalDate
 
 class ContributionsViewModel(
     private val repo: LedgerRepository,
+    private val queue: com.saif.mosque.data.ledger.LedgerQueue,
     private val mosqueId: String,
     private val user: AppUser
 ) : ViewModel() {
@@ -101,14 +102,27 @@ class ContributionsViewModel(
 
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
+    val pending = queue.store.observe(user.id, mosqueId, "contributions")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun retry(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.retry(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
+    fun discard(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.discard(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
 
-    fun add(c: Contribution, done: (Msg?) -> Unit) = mutate(done) { repo.addContribution(mosqueId, c, user.id) }
+    fun add(c: Contribution, done: (Msg?) -> Unit) = mutate(done, local = true) {
+        queue.enqueue(com.saif.mosque.data.ledger.PrototypeLedgerDraft(id = java.util.UUID.randomUUID().toString(), uid = user.id, mosqueId = mosqueId,
+            kind = "contributions", amountPoisha = com.saif.mosque.data.ledger.LedgerMath.poisha(c.amount, true),
+            sourceFundId = c.accountId, donorId = c.donorId, donorName = c.donorName,
+            receiptNo = c.receiptNo, date = c.date, note = c.note, createdAt = System.currentTimeMillis()))
+    }
     fun update(old: Contribution, new: Contribution, done: (Msg?) -> Unit) = mutate(done) { repo.updateContribution(mosqueId, old, new, user.id) }
     fun delete(c: Contribution) = mutate(null) { repo.deleteContribution(mosqueId, c) }
 
-    private fun mutate(done: ((Msg?) -> Unit)?, block: suspend () -> Unit) {
+    private fun mutate(done: ((Msg?) -> Unit)?, local: Boolean = false, block: suspend () -> Unit) {
         viewModelScope.launch {
-            try { block(); done?.invoke(null); _messages.emit(Msg.Res(R.string.saved_ok)) }
+            try { block(); done?.invoke(null); _messages.emit(Msg.Res(if (local) R.string.local_pending_saved else R.string.saved_ok)) }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) {
                 val error = Msg.Text(e.message ?: "error")
@@ -121,8 +135,10 @@ class ContributionsViewModel(
 @Composable
 fun ContributionsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
-    val vm: ContributionsViewModel = viewModel { ContributionsViewModel(container.ledgerRepository, mosqueId, user) }
-    val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
+    val vm: ContributionsViewModel = viewModel { ContributionsViewModel(container.ledgerRepository, container.ledgerQueue, mosqueId, user) }
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canEdit = vm.canEdit && !offline
+    val pending by vm.pending.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val donors by vm.donors.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -147,12 +163,15 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (canEdit) FloatingActionButton(onClick = { editing = Contribution(date = Format.todayIso()) }) {
+            if (vm.canEdit) FloatingActionButton(onClick = { editing = Contribution(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_contribution))
             }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+        com.saif.mosque.ui.components.PendingLedger(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
         StateBox(state) { (all, funds) ->
             val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", ym.first, ym.second)
             val list = all
@@ -160,7 +179,7 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                 .filter { fundFilter == null || it.accountId == fundFilter }
 
             LazyColumn(
-                Modifier.fillMaxSize().padding(inner).padding(16.dp),
+                Modifier.fillMaxSize().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
@@ -200,6 +219,8 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                         onDelete = if (canEdit) ({ deleting = c }) else null)
                 }
             }
+        }
+    }
         }
     }
 
@@ -286,7 +307,7 @@ internal fun ContributionFormDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
                 if (donorId.isBlank() && Validators.required(donorName) != null) { error = "required"; return@TextButton }
                 if (accountId.isBlank()) { error = "required"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }

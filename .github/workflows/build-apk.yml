@@ -143,7 +143,19 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Run rules tests in emulator
         working-directory: android/rules-tests
-        run: npx --yes firebase-tools@13.35.1 emulators:exec --project demo-mosque-rules --config ../firebase.json --only firestore 'npm test'
+        run: |
+          set -o pipefail
+          npx --yes firebase-tools@13.35.1 emulators:exec --project demo-mosque-rules --config ../firebase.json --only firestore 'npm test' 2>&1 | tee /tmp/firestore-rules-test.log
+      - name: Report rules test failures
+        if: failure()
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          log = Path('/tmp/firestore-rules-test.log')
+          if log.exists():
+              text = log.read_text(errors='replace')[-18000:]
+              print('::error::Rules test log tail: ' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PYCODE
 
   android-device-tests:
     name: Android emulator tests
