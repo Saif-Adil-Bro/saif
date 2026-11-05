@@ -103,3 +103,12 @@ test('legacy callable refuses writes after v2 migration', async () => {
   await assert.rejects(call({operation:'ledger',kind:'expenses',action:'add',mosqueId:'m',value:{accountId:'f',amount:1,title:'Test',date:'2026-01-01'}}), /migrated/);
   assert.equal(docs.get('mosques/m/funds/f').balance, 1000);
 });
+
+test('legacy directory callable initializes integer totals for v2 tenants', async () => {
+  docs.set('users/u', {active:true, mosqueId:'m', role:'TREASURER'});
+  docs.get('mosques/m').ledgerVersion = 2;
+  await call({operation:'directory',kind:'funds',action:'add',mosqueId:'m',value:{name:'New',code:'NEW',active:true}});
+  await call({operation:'directory',kind:'donors',action:'add',mosqueId:'m',value:{name:'New',active:true}});
+  assert.equal(docs.get('mosques/m/funds/new-id').balancePoisha,0);
+  assert.equal(docs.get('mosques/m/donors/new-id').totalDonatedPoisha,0);
+});

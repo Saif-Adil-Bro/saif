@@ -146,7 +146,9 @@ async function directory(uid, data) {
     } else {
       const value = kind === 'funds' ? {...fields(data.value, ['name','code'], ['nameEn','description']), active: data.value.active === true} : {...fields(data.value, ['name'], ['phone','address']), active: data.value.active === true};
       if (action === 'add') {
-        tx.set(ref, {...value, mosqueId, ...(kind === 'funds' ? {balance: 0} : {totalDonated: 0, createdAt: Date.now()})});
+        tx.set(ref, {...value, mosqueId, ...(kind === 'funds'
+          ? {balance: 0, ...(m.data().ledgerVersion === 2 ? {balancePoisha: 0} : {})}
+          : {totalDonated: 0, createdAt: Date.now(), ...(m.data().ledgerVersion === 2 ? {totalDonatedPoisha: 0} : {})})});
         tx.update(mosque, {[kind === 'funds' ? 'fundCount' : 'donorCount']: FieldValue.increment(1)});
       } else tx.update(ref, value); // never overwrite a concurrent balance/total
     }
