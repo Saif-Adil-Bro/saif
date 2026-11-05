@@ -14,6 +14,7 @@ npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config
   'node scripts/seed-sync-emulator.cjs && bash -o pipefail -c "node scripts/test-ledger-migration-emulator.mjs 2>&1 | tee /tmp/ledger-migration-test.log" && gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.saif.mosque.data.ledger.PrototypeLedgerIntegrationTest,com.saif.mosque.data.ledger.PrototypeCorrectionIntegrationTest,com.saif.mosque.data.invitations.PrototypeInvitationIntegrationTest' 2>&1 | tee /tmp/android-initial-test.log
 
 python3 scripts/assert-android-test-executed.py com.saif.mosque.data.outbox.DirectorySyncIntegrationTest
+python3 scripts/assert-android-test-executed.py com.saif.mosque.ui.InvitationDialogsTest
 
 # Start a separate emulator with the proposed v2 rules and a migrated fixture.
 # Nothing is deployed; the ledger test must not run in the first suite.
