@@ -2,7 +2,7 @@
   "name": "mosque-firestore-rules-tests",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test --test-concurrency=1 rules.test.mjs ledger-prototype.test.mjs && LEDGER_INTEGRATED=1 node --test ledger-prototype.test.mjs && node --test ledger-mutations.test.mjs" },
+  "scripts": { "test": "node --test --test-concurrency=1 rules.test.mjs ledger-prototype.test.mjs && LEDGER_INTEGRATED=1 node --test ledger-prototype.test.mjs && node --test ledger-mutations.test.mjs && node --test reported-rules.test.mjs" },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
     "firebase": "^11.0.2"
