@@ -25,6 +25,17 @@ async function main() {
   batch.set(db.doc('users/outbox-a'), {active: true, role: 'ADMIN', mosqueId: 'sync-test-mosque'});
   batch.set(db.doc('users/outbox-b'), {active: true, role: 'ADMIN', mosqueId: 'sync-other-mosque'});
   batch.set(db.doc('users/outbox-inactive'), {active: false, role: 'ADMIN', mosqueId: 'sync-test-mosque'});
+  // Isolated read fixture: newest 12 are voided; older legacy/explicit-false
+  // rows must remain visible even in the dashboard's ten-record view.
+  for (const kind of ['contributions', 'expenses', 'transfers']) {
+    const root = `mosques/sync-test-mosque/${kind}`;
+    for (let i = 1; i <= 12; i++) batch.set(db.doc(`${root}/void-${i}`), {
+      mosqueId:'sync-test-mosque', date:`2026-11-${String(i+10).padStart(2,'0')}`, amount:1, voided:true
+    });
+    batch.set(db.doc(`${root}/legacy`), {mosqueId:'sync-test-mosque',date:'2026-11-02',amount:2});
+    batch.set(db.doc(`${root}/live`), {mosqueId:'sync-test-mosque',date:'2026-11-01',amount:3,voided:false});
+    batch.set(db.doc(`${root}/malformed`), {mosqueId:'sync-test-mosque',date:'2026-11-23',amount:9,voided:'yes'});
+  }
   await batch.commit();
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

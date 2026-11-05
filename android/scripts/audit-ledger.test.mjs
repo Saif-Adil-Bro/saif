@@ -68,3 +68,13 @@ test('accepts consistent optional integer fields without requiring them for lega
   input.contributions[0].amountPoisha = 10025; input.expenses[0].amountPoisha = 1500;
   assert.deepEqual(audit(input).issues, []);
 });
+test('fails closed on tombstones and correction markers instead of certifying incomplete history', () => {
+  for (const patch of [{voided:true}, {voided:null}, {voided:'false'}, {ledgerMutationId:'change'}]) {
+    const input = sample(); Object.assign(input.expenses[0], patch);
+    const result = audit(input);
+    assert.equal(result.complete, false);
+    assert.ok(result.issues.some(x => x.code === 'unsupported_correction_history' && x.id === 'e'));
+  }
+  const input = sample(); input.expenses[0].voided = false;
+  assert.deepEqual(audit(input).issues, []);
+});

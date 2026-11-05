@@ -65,6 +65,12 @@ export function audit(snapshot) {
       if (!id || id.includes('/') || seen.has(id)) { problem('invalid_or_duplicate_id', kind, id); valid = false; continue; }
       seen.add(id);
       if (row.mosqueId !== mosqueId) { problem('wrong_or_missing_tenant', kind, id); valid = false; continue; }
+      // Correction receipts/tombstones cannot be reconciled by the legacy audit.
+      // Fail closed rather than reporting a misleading clean result or using it
+      // to activate migration without validating the complete mutation history.
+      if (Object.hasOwn(row, 'ledgerMutationId') || (Object.hasOwn(row, 'voided') && row.voided !== false)) {
+        problem('unsupported_correction_history', kind, id); valid = false; continue;
+      }
       try {
         const delta = effects(kind, null, row);
         const amountPoisha = cents(row.amount, true);

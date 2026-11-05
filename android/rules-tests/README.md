@@ -56,7 +56,13 @@ immutable correction receipts, atomic aggregate deltas and soft deletion. They
 are separate from `android/firestore.rules`, and are not yet integrated with the
 app, reports, migration or offline queue. The design and emulator suite still
 need review and must not be deployed. In particular, tombstones require filtering
-from all financial reports and verifiable audit handling before activation.
+from financial views and reports and verifiable audit handling before activation.
+The Android read paths now exclude `voided` and malformed markers, including from
+dashboard recent items and report queries. Recent views currently read the full
+history before taking ten, which can be expensive on Spark; a safe backfill and
+indexed/paginated rollout remains necessary. The legacy audit fails closed on
+correction markers rather than verifying receipt history; correction activation
+still requires a complete receipt-chain audit.
 
 ## Spark migration acceptance criteria
 

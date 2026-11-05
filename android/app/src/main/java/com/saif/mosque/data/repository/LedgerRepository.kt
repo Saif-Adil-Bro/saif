@@ -2,6 +2,7 @@ package com.saif.mosque.data.repository
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.QuerySnapshot
 import com.saif.mosque.util.snapshotsFlow
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser
@@ -14,6 +15,14 @@ import com.saif.mosque.data.model.Transfer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+
+// Legacy entries lack this field. A malformed marker must not silently make a
+// potentially voided financial record count as confirmed income or expenditure.
+internal fun visibleLedgerMarker(present: Boolean, value: Any?): Boolean = !present || value == false
+
+private fun <T : Any> QuerySnapshot.visibleLedgerRecords(type: Class<T>): List<T> =
+    documents.asSequence().filter { visibleLedgerMarker(it.contains("voided"), it.get("voided")) }
+        .mapNotNull { it.toObject(type) }.toList()
 
 /** Tenant streams and calls to the trusted mutation backend. */
 class LedgerRepository(
@@ -36,35 +45,39 @@ class LedgerRepository(
 
     fun observeContributions(mosqueId: String): Flow<List<Contribution>> =
         coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.toObjects(Contribution::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Contribution::class.java) }
 
     fun observeExpenses(mosqueId: String): Flow<List<Expense>> =
         coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.toObjects(Expense::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Expense::class.java) }
 
     fun observeTransfers(mosqueId: String): Flow<List<Transfer>> =
         coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.toObjects(Transfer::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Transfer::class.java) }
 
     fun observeMembers(mosqueId: String): Flow<List<AppUser>> =
         db.collection("users").whereEqualTo("mosqueId", mosqueId).snapshotsFlow()
             .map { it.toObjects(AppUser::class.java) }
 
+    // Filtering after a server limit can hide older live rows when the newest
+    // entries are voided. Legacy rows have no voided field, so Firestore cannot
+    // query both legacy and live rows by that field. This reads the full history;
+    // replace it only after a safe marker backfill/indexed pagination rollout.
     fun observeRecentContributions(mosqueId: String): Flow<List<Contribution>> =
-        coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING).limit(10)
-            .snapshotsFlow().map { it.toObjects(Contribution::class.java) }
+        coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING)
+            .snapshotsFlow().map { it.visibleLedgerRecords(Contribution::class.java).take(10) }
     fun observeRecentExpenses(mosqueId: String): Flow<List<Expense>> =
-        coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING).limit(10)
-            .snapshotsFlow().map { it.toObjects(Expense::class.java) }
+        coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING)
+            .snapshotsFlow().map { it.visibleLedgerRecords(Expense::class.java).take(10) }
     fun observeRecentTransfers(mosqueId: String): Flow<List<Transfer>> =
-        coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING).limit(10)
-            .snapshotsFlow().map { it.toObjects(Transfer::class.java) }
+        coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING)
+            .snapshotsFlow().map { it.visibleLedgerRecords(Transfer::class.java).take(10) }
     fun observeMonthContributions(mosqueId: String, start: String, end: String): Flow<List<Contribution>> =
         coll(mosqueId, "contributions").whereGreaterThanOrEqualTo("date", start).whereLessThanOrEqualTo("date", end)
-            .snapshotsFlow().map { it.toObjects(Contribution::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Contribution::class.java) }
     fun observeMonthExpenses(mosqueId: String, start: String, end: String): Flow<List<Expense>> =
         coll(mosqueId, "expenses").whereGreaterThanOrEqualTo("date", start).whereLessThanOrEqualTo("date", end)
-            .snapshotsFlow().map { it.toObjects(Expense::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Expense::class.java) }
 
     fun observeMosque(mosqueId: String): Flow<Mosque?> =
         mosqueRef(mosqueId).snapshotsFlow().map { it.toObject(Mosque::class.java) }
@@ -179,13 +192,13 @@ class LedgerRepository(
         coll(mosqueId, "contributions")
             .whereGreaterThanOrEqualTo("date", startIso)
             .whereLessThanOrEqualTo("date", endIso)
-            .get().await().toObjects(Contribution::class.java)
+            .get().await().visibleLedgerRecords(Contribution::class.java)
 
     suspend fun expensesInRange(mosqueId: String, startIso: String, endIso: String): List<Expense> =
         coll(mosqueId, "expenses")
             .whereGreaterThanOrEqualTo("date", startIso)
             .whereLessThanOrEqualTo("date", endIso)
-            .get().await().toObjects(Expense::class.java)
+            .get().await().visibleLedgerRecords(Expense::class.java)
 }
 
 class InsufficientBalanceException : Exception("insufficient balance")

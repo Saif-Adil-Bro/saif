@@ -16,6 +16,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -40,6 +41,18 @@ class DirectorySyncIntegrationTest {
                 .setInputData(workDataOf("id" to id)).build().doWork()
         val mosque = db.collection("mosques").document("sync-test-mosque")
         login("a@example.test")
+        // Both legacy rows and explicit live markers survive the tombstone filter,
+        // including when more than ten newer tombstones precede them.
+        val ledger = container.ledgerRepository
+        withTimeout(20_000) {
+            assertEquals(setOf("legacy", "live"), ledger.observeRecentContributions("sync-test-mosque").first { it.size == 2 }.map { it.id }.toSet())
+            assertEquals(setOf("legacy", "live"), ledger.observeRecentExpenses("sync-test-mosque").first { it.size == 2 }.map { it.id }.toSet())
+            assertEquals(setOf("legacy", "live"), ledger.observeRecentTransfers("sync-test-mosque").first { it.size == 2 }.map { it.id }.toSet())
+            assertEquals(setOf("legacy", "live"), ledger.observeMonthContributions("sync-test-mosque", "2026-11-01", "2026-11-30").first { it.size == 2 }.map { it.id }.toSet())
+            assertEquals(setOf("legacy", "live"), ledger.observeMonthExpenses("sync-test-mosque", "2026-11-01", "2026-11-30").first { it.size == 2 }.map { it.id }.toSet())
+            assertEquals(setOf("legacy", "live"), ledger.contributionsInRange("sync-test-mosque", "2026-11-01", "2026-11-30").map { it.id }.toSet())
+            assertEquals(setOf("legacy", "live"), ledger.expensesInRange("sync-test-mosque", "2026-11-01", "2026-11-30").map { it.id }.toSet())
+        }
         db.disableNetwork().await()
         val first = store.addFund("outbox-a", "sync-test-mosque", Fund(name = "টেস্ট", code = "TST", nameEn = "Test", description = "Test fund"))
         assertEquals("PENDING", store.find(first.id)?.state)
