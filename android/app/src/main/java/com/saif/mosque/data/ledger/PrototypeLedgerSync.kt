@@ -12,6 +12,8 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.Source
+import kotlinx.coroutines.tasks.await
 import com.saif.mosque.MosqueApp
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
@@ -43,6 +45,21 @@ class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : Corout
             catch (e: CancellationException) { throw e } catch (_: Exception) { return Result.failure() }
         if (row == null || row.state != "PENDING") return Result.success()
         try {
+            // Firestore transactions can bypass disableNetwork's normal listener/write
+            // path on some SDK versions. A SERVER read first ensures connectivity is
+            // revalidated and the original actor is still eligible before sending.
+            var profile = container.db.collection("users").document(uid).get(Source.SERVER).await()
+            if (profile.metadata.hasPendingWrites()) {
+                container.db.waitForPendingWrites().await()
+                profile = container.db.collection("users").document(uid).get(Source.SERVER).await()
+            }
+            val role = profile.getString("role")
+            val allowed = role == "SUPERADMIN" || (profile.getString("mosqueId") == mosqueId &&
+                (role in setOf("ADMIN", "SECRETARY", "TREASURER") ||
+                    (row.draft.kind != "transfers" && role == "CASHIER")))
+            if (!profile.exists() || profile.metadata.hasPendingWrites() || profile.getBoolean("active") != true || !allowed)
+                throw LedgerPermissionDenied()
+            if (container.auth.currentUser?.uid != uid) return Result.success()
             PrototypeLedgerWriter(container.db) { container.auth.currentUser?.uid }.commit(row.draft)
         } catch (cancel: CancellationException) { throw cancel } catch (e: Exception) {
             if (container.auth.currentUser?.uid != uid || e is LedgerIdentityChanged) return Result.success()
@@ -52,6 +69,7 @@ class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : Corout
                 FirebaseFirestoreException.Code.UNAUTHENTICATED))
             if (transient) return Result.retry()
             val reason = when (e) {
+                is LedgerPermissionDenied -> "PERMISSION"
                 is LedgerOverdraft -> "INSUFFICIENT"
                 is LedgerMigrationRequired -> "MIGRATION"
                 is LedgerOperationConflict, is LedgerUnavailableAccount -> "CONFLICT"
@@ -69,3 +87,5 @@ class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : Corout
         catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { Result.retry() }
     }
 }
+
+private class LedgerPermissionDenied : IllegalStateException("Ledger access changed")

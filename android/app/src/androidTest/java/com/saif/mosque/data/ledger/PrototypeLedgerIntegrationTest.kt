@@ -41,12 +41,7 @@ class PrototypeLedgerIntegrationTest {
                 workDataOf("id" to d.id, "uid" to d.uid, "mosqueId" to d.mosqueId)).build().doWork()
         store.enqueue(base)
         db.disableNetwork().await()
-        val offlineError = runCatching { withTimeout(20_000) { writer.commit(base) } }.exceptionOrNull()
-        assertTrue("Offline transaction must fail", offlineError != null)
-        val offlineResult = withTimeout(20_000) { sync(base) }
-        val offlineRow = store.list(base.uid, base.mosqueId).single()
-        assertEquals("Offline failure: ${offlineError?.javaClass?.name}: ${offlineError?.message}; blocked=${offlineRow.failure}",
-            ListenableWorker.Result.retry(), offlineResult)
+        assertEquals(ListenableWorker.Result.retry(), withTimeout(20_000) { sync(base) })
         assertEquals("PENDING", store.list(base.uid, base.mosqueId).single().state)
         db.enableNetwork().await()
         auth.signInWithEmailAndPassword("other-ledger@example.test", "test-only-password").await()
