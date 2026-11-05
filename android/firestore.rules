@@ -222,6 +222,111 @@ service cloud.firestore {
         freshOp(m, 'contributions', opId) && op.donorId == id &&
         donorDelta(m, id, opId, op.amountPoisha, op.donorName);
     }
+    // Immutable operation receipts bind every correction to its exact before/after
+    // record and to the matching aggregate changes in this same atomic commit.
+    function mutationPath(m, id) { return /databases/$(database)/documents/mosques/$(m)/ledgerMutations/$(id); }
+    function mutationFresh(m, id) { return validId(id) && !exists(mutationPath(m, id)) && existsAfter(mutationPath(m, id)); }
+    function mutationFundDelta(op, id) {
+      let old = op.before;
+      let next = op.after;
+      let isIncome = op.kind == 'contributions';
+      return op.kind == 'transfers'
+        ? (old.fromAccountId == id ? op.oldAmountPoisha : -op.oldAmountPoisha)
+        : (old.accountId == id ? (isIncome ? -op.oldAmountPoisha : op.oldAmountPoisha) : 0) +
+          (op.action == 'update' && next.accountId == id ? (isIncome ? op.newAmountPoisha : -op.newAmountPoisha) : 0);
+    }
+    function mutationDonorDelta(op, id) {
+      return (op.before.donorId == id ? -op.oldAmountPoisha : 0) +
+        (op.action == 'update' && op.after.donorId == id ? op.newAmountPoisha : 0);
+    }
+    function mutationTotalDelta(op) {
+      return op.kind == 'contributions' ? (op.action == 'update' ? op.newAmountPoisha : 0) - op.oldAmountPoisha :
+        op.kind == 'expenses' ? op.oldAmountPoisha - (op.action == 'update' ? op.newAmountPoisha : 0) : 0;
+    }
+    function mutationFund(m, id, opId, op) {
+      let p = fundPath(m, id);
+      let old = get(p).data;
+      let next = getAfter(p).data;
+      let newFund = op.action == 'update' && op.after.accountId == id && op.before.accountId != id;
+      return old.mosqueId == m && (!newFund || old.active == true) &&
+        money(old.balancePoisha, old.balance) && money(next.balancePoisha, next.balance) &&
+        next.balancePoisha == old.balancePoisha + mutationFundDelta(op, id) &&
+        next.ledgerOpId == opId && next.ledgerOpKind == 'ledgerMutations' &&
+        next.diff(old).affectedKeys().hasOnly(['balance','balancePoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function mutationDonor(m, id, opId, op) {
+      let p = donorPath(m, id);
+      let old = get(p).data;
+      let next = getAfter(p).data;
+      let newDonor = op.action == 'update' && op.after.donorId == id && op.before.donorId != id;
+      return old.mosqueId == m && (!newDonor || old.active == true) &&
+        (op.action != 'update' || op.after.donorId != id || op.after.donorName == old.name) &&
+        money(old.totalDonatedPoisha, old.totalDonated) && money(next.totalDonatedPoisha, next.totalDonated) &&
+        next.totalDonatedPoisha == old.totalDonatedPoisha + mutationDonorDelta(op, id) &&
+        next.ledgerOpId == opId && next.ledgerOpKind == 'ledgerMutations' &&
+        next.diff(old).affectedKeys().hasOnly(['totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function mutationTargetShape(op, m) {
+      let old = op.before;
+      let next = op.after;
+      return old.mosqueId == m && old.get('voided', false) == false && money(op.oldAmountPoisha, old.amount) && op.oldAmountPoisha > 0 &&
+        old.get('amountPoisha', op.oldAmountPoisha) == op.oldAmountPoisha &&
+        (op.kind == 'transfers' ? validId(old.fromAccountId) && validId(old.toAccountId) && old.fromAccountId != old.toAccountId :
+          validId(old.accountId) && (op.kind != 'contributions' || (old.donorId is string && (old.donorId == '' || validId(old.donorId))))) &&
+        (op.action == 'delete' ? next.diff(old).affectedKeys().hasOnly(['voided','ledgerMutationId']) && next.voided == true && op.newAmountPoisha == 0 :
+          op.kind in ['contributions','expenses'] && money(op.newAmountPoisha, next.amount) && op.newAmountPoisha > 0 &&
+          next.amountPoisha == op.newAmountPoisha && next.mosqueId == m && validId(next.accountId) &&
+          next.date is string && next.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$') && text(next.note, false) &&
+          (op.kind == 'contributions' ?
+            next.diff(old).affectedKeys().hasOnly(['amount','amountPoisha','accountId','donorId','donorName','date','note','receiptNo','ledgerMutationId']) &&
+            next.donorId is string && (next.donorId == '' || validId(next.donorId)) && text(next.donorName, true) && text(next.receiptNo, false) :
+            next.diff(old).affectedKeys().hasOnly(['amount','amountPoisha','accountId','title','category','paidTo','date','note','receiptNo','ledgerMutationId']) &&
+            text(next.title, true) && text(next.category, false) && text(next.paidTo, false) && text(next.receiptNo, false)));
+    }
+    function mutationCreate(m, opId) {
+      let op = request.resource.data;
+      let target = opPath(m, op.kind, op.targetId);
+      let old = op.before;
+      let next = op.after;
+      return op.keys().hasOnly(['uid','kind','targetId','action','oldAmountPoisha','newAmountPoisha','before','after']) &&
+        op.uid == request.auth.uid && op.kind in ['contributions','expenses','transfers'] && op.action in ['update','delete'] &&
+        validId(op.targetId) && op.before is map && op.after is map && canMoney(m, op.kind) &&
+        exists(target) && get(target).data == old && mutationTargetShape(op, m) &&
+        existsAfter(target) && getAfter(target).data == next && next.ledgerMutationId == opId &&
+        (op.kind == 'transfers' ?
+          mutationFund(m, old.fromAccountId, opId, op) && mutationFund(m, old.toAccountId, opId, op) :
+          mutationFund(m, old.accountId, opId, op) &&
+          (op.action != 'update' || old.accountId == next.accountId || mutationFund(m, next.accountId, opId, op)) &&
+          (op.kind != 'contributions' ||
+            ((old.donorId == '' || mutationDonor(m, old.donorId, opId, op)) &&
+             (op.action != 'update' || next.donorId == '' || next.donorId == old.donorId || mutationDonor(m, next.donorId, opId, op))))) &&
+        (mutationTotalDelta(op) == 0 || mosqueDelta(m, 'ledgerMutations', opId, mutationTotalDelta(op)));
+    }
+    function mutationFundUpdate(m, id) {
+      let opId = request.resource.data.ledgerOpId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) &&
+        (op.kind == 'transfers' ? id in [op.before.fromAccountId, op.before.toAccountId] :
+          id == op.before.accountId || (op.action == 'update' && id == op.after.accountId)) && mutationFund(m, id, opId, op);
+    }
+    function mutationDonorUpdate(m, id) {
+      let opId = request.resource.data.ledgerOpId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) && op.kind == 'contributions' &&
+        (id == op.before.donorId || (op.action == 'update' && id == op.after.donorId)) && mutationDonor(m, id, opId, op);
+    }
+    function mutationMosqueUpdate(m) {
+      let opId = request.resource.data.ledgerOpId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) && op.kind in ['contributions','expenses'] &&
+        mosqueDelta(m, 'ledgerMutations', opId, mutationTotalDelta(op));
+    }
+    function mutationRecordChange(m, k, id) {
+      let opId = request.resource.data.ledgerMutationId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) && op.uid == request.auth.uid && op.kind == k && op.targetId == id &&
+        op.before == resource.data && op.after == request.resource.data;
+    }
     match /users/{uid} {
       // Self-read permits login to report an inactive profile; tenant queries must
       // constrain mosqueId and cannot read profiles from a different tenant.
@@ -236,7 +341,7 @@ service cloud.firestore {
       allow read: if platform() || sameTenant(mosqueId);
       allow create, delete: if false;
       allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind'])
-        ? mosqueUpdate(mosqueId)
+        ? (request.resource.data.ledgerOpKind == 'ledgerMutations' ? mutationMosqueUpdate(mosqueId) : mosqueUpdate(mosqueId))
         : ((platform() && resource.data.get('ledgerMigration', '') != 'frozen'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
@@ -246,15 +351,19 @@ service cloud.firestore {
         || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
         || memberCounterDelete(mosqueId));
       match /{collection}/{doc} {
-        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts']
+        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts', 'ledgerMutations']
           && (platform() || activeTenant(mosqueId));
         allow create: if (collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc))
           || (collection == 'syncReceipts' && receiptCreate(mosqueId, doc))
-          || (collection in ['contributions', 'expenses', 'transfers'] && createLedger(mosqueId, collection, doc));
-        allow update: if collection in ['funds', 'donors'] &&
+          || (collection in ['contributions', 'expenses', 'transfers'] && createLedger(mosqueId, collection, doc))
+          || (collection == 'ledgerMutations' && mutationCreate(mosqueId, doc));
+        allow update: if (collection in ['funds', 'donors'] &&
           (request.resource.data.diff(resource.data).affectedKeys().hasAny(['balance','balancePoisha','totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind'])
-            ? (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc))
-            : directoryUpdate(mosqueId, collection, doc));
+            ? (request.resource.data.ledgerOpKind == 'ledgerMutations'
+                ? (collection == 'funds' ? mutationFundUpdate(mosqueId, doc) : mutationDonorUpdate(mosqueId, doc))
+                : (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc)))
+            : directoryUpdate(mosqueId, collection, doc)))
+          || (collection in ['contributions','expenses','transfers'] && mutationRecordChange(mosqueId, collection, doc));
         allow delete: if false;
       }
     }
