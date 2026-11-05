@@ -48,7 +48,7 @@ class PrototypeLedgerIntegrationTest {
         assertEquals(ListenableWorker.Result.success(), sync(base))
         assertEquals("PENDING", store.list(base.uid, base.mosqueId).single().state)
         auth.signInWithEmailAndPassword("ledger@example.test", "test-only-password").await()
-        PrototypeLedgerSync.schedulePending(app, base.uid, base.mosqueId)
+        assertEquals(ListenableWorker.Result.success(), TestListenableWorkerBuilder<PrototypeLedgerRecoveryWorker>(app).build().doWork())
         withTimeout(45_000) { while (store.list(base.uid, base.mosqueId).isNotEmpty()) delay(250) }
         store.enqueue(base) // simulate process death after commit but before removing local draft
         assertEquals(ListenableWorker.Result.success(), sync(base))

@@ -30,6 +30,8 @@ class PrototypeLedgerOutboxTest {
         store.enqueue(draft("three", mosqueId="m2"))
         assertTrue(runCatching { store.enqueue(one.copy(amountPoisha=100)) }.exceptionOrNull() is SQLiteConstraintException)
         assertEquals(listOf(one), store.list("u1", "m1").map { it.draft })
+        assertEquals(listOf("m1", "m2"), store.pendingMosques("u1"))
+        assertEquals(listOf("m1"), store.pendingMosques("u2"))
         store.close()
         val reopened = PrototypeLedgerOutbox(context, name)
         try { assertEquals(one, reopened.list("u1", "m1").single().draft) } finally { reopened.close() }

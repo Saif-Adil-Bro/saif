@@ -65,6 +65,13 @@ class PrototypeLedgerOutbox internal constructor(context: Context, name: String 
             }
         }
     }
+    /** Used by recovery without exposing another account's scopes. */
+    suspend fun pendingMosques(uid: String): List<String> = withContext(Dispatchers.IO) {
+        readableDatabase.query(true, "entries", arrayOf("mosque_id"), "uid = ? AND state = 'PENDING'",
+            arrayOf(uid), null, null, "mosque_id ASC", null).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+    }
     suspend fun block(id: String, uid: String, mosqueId: String, failure: String): Boolean = withContext(Dispatchers.IO) {
         require(failure in setOf("PERMISSION", "CONFLICT", "INSUFFICIENT", "MIGRATION", "INVALID", "UNKNOWN"))
         val count = writableDatabase.update("entries", ContentValues().apply { put("state", "BLOCKED"); put("failure", failure) },

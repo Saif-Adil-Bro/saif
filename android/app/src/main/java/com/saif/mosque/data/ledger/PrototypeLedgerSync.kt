@@ -5,6 +5,8 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -26,10 +28,31 @@ object PrototypeLedgerSync {
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueueUniqueWork("prototype-ledger-${draft.id}", ExistingWorkPolicy.KEEP, request)
+        scheduleRecovery(context)
+    }
+    fun scheduleRecovery(context: Context) {
+        val request = PeriodicWorkRequestBuilder<PrototypeLedgerRecoveryWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "prototype-ledger-recovery", ExistingPeriodicWorkPolicy.KEEP, request)
     }
     suspend fun schedulePending(context: Context, uid: String, mosqueId: String) {
         PrototypeLedgerOutbox.get(context).list(uid, mosqueId).filter { it.state == "PENDING" }
             .forEach { schedule(context, it.draft) }
+        scheduleRecovery(context)
+    }
+}
+
+/** A startup caller must also schedule recovery; no production startup path invokes it yet. */
+class PrototypeLedgerRecoveryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val uid = (applicationContext as MosqueApp).container.auth.currentUser?.uid ?: return Result.success()
+        return try {
+            PrototypeLedgerOutbox.get(applicationContext).pendingMosques(uid).forEach {
+                PrototypeLedgerSync.schedulePending(applicationContext, uid, it)
+            }
+            Result.success()
+        } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { Result.retry() }
     }
 }
 
