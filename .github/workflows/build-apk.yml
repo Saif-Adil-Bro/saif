@@ -153,7 +153,7 @@ jobs:
           from pathlib import Path
           log = Path('/tmp/firestore-rules-test.log')
           if log.exists():
-              text = log.read_text(errors='replace')[-18000:]
+              text = log.read_text(errors='replace')[-6000:]
               print('::error::Rules test log tail: ' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
           PYCODE
 

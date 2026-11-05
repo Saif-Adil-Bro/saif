@@ -47,6 +47,15 @@ this file. A safe migration must freeze or upgrade all writers, back up and
 reconcile historic data, initialize and verify integer fields, and test the
 matching client, rules, concurrency, retries and rollout/rollback together.
 
+## Isolated correction prototype (do not deploy)
+
+`ledger-corrections-prototype.rules` and `ledger-mutations.test.mjs` explore
+immutable correction receipts, atomic aggregate deltas and soft deletion. They
+are separate from `android/firestore.rules`, and are not yet integrated with the
+app, reports, migration or offline queue. The design and emulator suite still
+need review and must not be deployed. In particular, tombstones require filtering
+from all financial reports and verifiable audit handling before activation.
+
 ## Spark migration acceptance criteria
 
 Before replacing the callable backend, extend these emulator tests to cover both
