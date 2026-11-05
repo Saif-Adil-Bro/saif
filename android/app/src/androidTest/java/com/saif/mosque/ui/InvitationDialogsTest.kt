@@ -1,10 +1,14 @@
 package com.saif.mosque.ui
 
 import android.content.Context
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -21,6 +25,7 @@ import com.saif.mosque.ui.invitations.PrototypeInvitationShareDialog
 import com.saif.mosque.ui.theme.MosqueTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +50,21 @@ class InvitationDialogsTest {
         compose.onNodeWithText(context.getString(R.string.invitation_code)).performTextInput(InvitationCode.encode(address))
         compose.onNodeWithText(context.getString(R.string.invitation_continue)).performClick()
         compose.runOnIdle { assertEquals(address, selected) }
+    }
+    @Test fun shareActionsRemainVisibleAndSeparateWithLargeText() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
+                MosqueTheme { PrototypeInvitationShareDialog(InvitationAddress("মসজিদ-ঢাকা", "invitation-example"), {}, {}) }
+            }
+        }
+        val copy = compose.onNodeWithText(context.getString(R.string.invitation_copy))
+        val close = compose.onNodeWithText(context.getString(R.string.close))
+        copy.assertIsDisplayed(); close.assertIsDisplayed()
+        val first = copy.getUnclippedBoundsInRoot()
+        val second = close.getUnclippedBoundsInRoot()
+        assertTrue(first.right <= second.left || second.right <= first.left || first.bottom <= second.top || second.bottom <= first.top)
     }
     @Test fun shareDialogCopiesExactReference() {
         val context = ApplicationProvider.getApplicationContext<Context>()
