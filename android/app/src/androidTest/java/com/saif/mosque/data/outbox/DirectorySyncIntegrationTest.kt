@@ -131,6 +131,12 @@ class DirectorySyncIntegrationTest {
         // An active administrator can read this tenant, but a missing counter
         // makes the paired write fail. Preserve the draft and expose the stage.
         login("badcounter@example.test")
+        val badMosque = db.collection("mosques").document("sync-badcounter")
+        // Guard against accidentally running with the emulator's open fallback rules.
+        val denied = runCatching { badMosque.update("totalBalance", 12345).await() }.exceptionOrNull()
+        assertEquals(com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED,
+            (denied as? com.google.firebase.firestore.FirebaseFirestoreException)?.code)
+        assertEquals(false, badMosque.get(Source.SERVER).await().contains("fundCount"))
         val bad = store.addFund("outbox-badcounter", "sync-badcounter", Fund(name = "Keep this", code = "KEP"))
         assertEquals(ListenableWorker.Result.success(), sync(bad.id))
         assertEquals("BLOCKED", store.find(bad.id)?.state)
