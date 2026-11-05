@@ -83,3 +83,20 @@ test('receipt cannot be forged without the exact linked record and totals',async
  await assertFails(setDoc(doc(db,'mosques/m/ledgerMutations/alone'),{uid:'admin',kind:'expenses',targetId:'x',action:'delete',oldAmountPoisha:1000,newAmountPoisha:0,before:old,after:{...old,voided:true,ledgerMutationId:'alone'}}));
  await assertFails(updateDoc(doc(db,'mosques/m/funds/a'),field(9000,'alone')));
 });
+test('allows correcting an archived old account but refuses assigning a new archived account',async()=>{
+ const db=dbFor('admin');
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const b=writeBatch(ctx.firestore()); b.update(doc(ctx.firestore(),'mosques/m/funds/a'),{active:false});
+  b.update(doc(ctx.firestore(),'mosques/m/donors/d'),{active:false}); await b.commit();
+ });
+ await assertSucceeds(mutate(db,'contributions','c','archive-old','delete',{voided:true},[
+   ['/funds/a',field(3000,'archive-old')],['/donors/d',donor(0,'archive-old')],['',total(5000,'archive-old')]
+ ]));
+ await assertFails(mutate(db,'expenses','x','archive-new','update',{accountId:'a'},[['/funds/a',field(3000,'archive-new')]]));
+});
+test('malformed historical self-transfer cannot inflate a fund',async()=>{
+ const db=dbFor('admin');
+ await env.withSecurityRulesDisabled(async ctx=>updateDoc(doc(ctx.firestore(),'mosques/m/transfers/t'),{toAccountId:'a'}));
+ await assertFails(mutate(db,'transfers','t','self','delete',{voided:true},[['/funds/a',field(10000,'self')]]));
+ assert.equal((await getDoc(doc(db,'mosques/m/funds/a'))).data().balancePoisha,8000);
+});
