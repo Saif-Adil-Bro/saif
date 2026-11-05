@@ -22,6 +22,7 @@ async function main(){
  put('mosques/correction/donors/d',{mosqueId:'correction',active:true,name:'Donor',totalDonated:50,totalDonatedPoisha:5000});
  put('mosques/correction/donors/e',{mosqueId:'correction',active:true,name:'Other',totalDonated:0,totalDonatedPoisha:0});
  put('mosques/correction/contributions/c',{mosqueId:'correction',accountId:'a',donorId:'d',donorName:'Donor',amount:50,amountPoisha:5000,date:'2026-11-05',note:'',receiptNo:'',createdBy:'correction-admin',createdAt:1});
+ put('mosques/correction/transfers/t',{mosqueId:'correction',fromAccountId:'a',toAccountId:'b',amount:20,amountPoisha:2000,date:'2026-11-05',note:'',createdBy:'correction-admin',createdAt:1});
  for(const id of ['x','y']) put(`mosques/correction/expenses/${id}`,{mosqueId:'correction',accountId:'a',title:'Rent',category:'',paidTo:'',amount:10,amountPoisha:1000,date:'2026-11-05',note:'',receiptNo:'',status:'approved',approvedBy:'',createdBy:'correction-admin',createdAt:1});
  await b.commit();
 }

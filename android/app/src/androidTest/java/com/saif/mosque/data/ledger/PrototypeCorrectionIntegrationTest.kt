@@ -46,6 +46,19 @@ class PrototypeCorrectionIntegrationTest {
         assertEquals(true, parent.collection("expenses").document("x").get(Source.SERVER).await().getBoolean("voided"))
         assertEquals(4000L, parent.collection("funds").document("a").get(Source.SERVER).await().getLong("balancePoisha"))
         assertEquals(10000L, parent.get(Source.SERVER).await().getLong("totalBalancePoisha"))
+        val transfer = PrototypeCorrectionDraft("undo-transfer", "correction-admin", "correction", "transfers", "t", "delete", before("transfers", "t"))
+        writer.commit(transfer)
+        assertEquals(6000L, parent.collection("funds").document("a").get(Source.SERVER).await().getLong("balancePoisha"))
+        assertEquals(4000L, parent.collection("funds").document("b").get(Source.SERVER).await().getLong("balancePoisha"))
+        assertEquals(10000L, parent.get(Source.SERVER).await().getLong("totalBalancePoisha"))
+        // Once income was spent, reversing it must fail without any partial write.
+        PrototypeLedgerWriter(db) { auth.currentUser?.uid }.commit(PrototypeLedgerDraft(
+            id="spend", uid="correction-admin", mosqueId="correction", kind="expenses", amountPoisha=1000,
+            sourceFundId="b", title="Spend", date="2026-11-05", createdAt=1))
+        val overdraft = PrototypeCorrectionDraft("overdraft", "correction-admin", "correction", "contributions", "c", "delete", before("contributions", "c"))
+        assertTrue(runCatching { writer.commit(overdraft) }.exceptionOrNull() is LedgerOverdraft)
+        assertFalse(parent.collection("ledgerMutations").document("overdraft").get(Source.SERVER).await().exists())
+        assertEquals(3000L, parent.collection("funds").document("b").get(Source.SERVER).await().getLong("balancePoisha"))
         val previous = before("expenses", "y")
         val drafts = listOf("one", "two").map { id ->
             PrototypeCorrectionDraft(id, "correction-admin", "correction", "expenses", "y", "update", previous, mapOf("title" to id))
