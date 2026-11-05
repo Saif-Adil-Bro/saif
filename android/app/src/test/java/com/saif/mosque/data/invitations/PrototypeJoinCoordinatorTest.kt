@@ -89,5 +89,9 @@ class PrototypeJoinCoordinatorTest {
         coordinator.redeem()
         assertEquals(PrototypeJoinPhase.VERIFY, coordinator.state.value.phase)
         assertEquals(PrototypeJoinMessage.AUTH_UNCERTAIN, coordinator.state.value.message)
+        gateway.onRedeem = { gateway.user = null; throw IllegalStateException("identity changed during failure") }
+        coordinator.redeem()
+        assertEquals(PrototypeJoinPhase.ACCOUNT, coordinator.state.value.phase)
+        assertEquals(PrototypeJoinMessage.AUTH_UNCERTAIN, coordinator.state.value.message)
     }
 }
