@@ -4,7 +4,7 @@ import {after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {initializeTestEnvironment,assertSucceeds,assertFails} from '@firebase/rules-unit-testing';
-import {doc,setDoc,writeBatch,increment} from 'firebase/firestore';
+import {doc,writeBatch,increment} from 'firebase/firestore';
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) throw Error('Firestore emulator required');
 const original=readFileSync(new URL('../firestore.rules',import.meta.url),'utf8');
@@ -13,13 +13,9 @@ const bad="let op = getAftexpenseser(opPath(m, k, opId)).data;\n      return val
 assert.ok(original.includes(exact));
 let env;
 after(async()=>{await env?.cleanup();});
-test('rules compiler rejects the pasted unknown getAftexpenseser function',async()=>{
- const broken=original.replace(exact,bad);
- await assert.rejects(initializeTestEnvironment({projectId:'demo-mosque-rules',firestore:{rules:broken}}));
-});
-test('with just the empty expense entry, fund creation remains allowed but expense is denied',async()=>{
- const broken=original.replace(exact,exact.replace("['contributions','expenses']","['contributions','']"));
- env=await initializeTestEnvironment({projectId:'demo-mosque-rules',firestore:{rules:broken}});
+async function setup(rules) {
+ await env?.cleanup();
+ env=await initializeTestEnvironment({projectId:'demo-mosque-rules',firestore:{rules}});
  await env.clearFirestore();
  await env.withSecurityRulesDisabled(async ctx=>{
   const db=ctx.firestore(),b=writeBatch(db);
@@ -28,14 +24,28 @@ test('with just the empty expense entry, fund creation remains allowed but expen
   b.set(doc(db,'mosques/m/funds/main'),{active:true,mosqueId:'m',balance:100,balancePoisha:10000});
   await b.commit();
  });
- const db=env.authenticatedContext('admin').firestore();
+ return env.authenticatedContext('admin').firestore();
+}
+function fund(db) {
  const b=writeBatch(db);
  b.set(doc(db,'mosques/m/funds/new'),{mosqueId:'m',name:'টেস্ট',code:'TST',nameEn:'Test',description:'Test fund',active:true,balance:0,balancePoisha:0,syncOpId:'new',syncOwner:'admin'});
  b.update(doc(db,'mosques/m'),{fundCount:increment(1),directoryOpId:'new',directoryOpKind:'funds'});
- await assertSucceeds(b.commit());
- const expense=writeBatch(db);
- expense.set(doc(db,'mosques/m/expenses/e'),{mosqueId:'m',amount:10,amountPoisha:1000,accountId:'main',title:'Expense',category:'',paidTo:'',date:'2026-11-05',note:'',receiptNo:'',status:'approved',approvedBy:'',createdBy:'admin',createdAt:1});
- expense.update(doc(db,'mosques/m/funds/main'),{balance:90,balancePoisha:9000,ledgerOpId:'e',ledgerOpKind:'expenses'});
- expense.update(doc(db,'mosques/m'),{totalBalance:90,totalBalancePoisha:9000,ledgerOpId:'e',ledgerOpKind:'expenses'});
- await assertFails(expense.commit());
+ return b.commit();
+}
+function expense(db) {
+ const b=writeBatch(db);
+ b.set(doc(db,'mosques/m/expenses/e'),{mosqueId:'m',amount:10,amountPoisha:1000,accountId:'main',title:'Expense',category:'',paidTo:'',date:'2026-11-05',note:'',receiptNo:'',status:'approved',approvedBy:'',createdBy:'admin',createdAt:1});
+ b.update(doc(db,'mosques/m/funds/main'),{balance:90,balancePoisha:9000,ledgerOpId:'e',ledgerOpKind:'expenses'});
+ b.update(doc(db,'mosques/m'),{totalBalance:90,totalBalancePoisha:9000,ledgerOpId:'e',ledgerOpKind:'expenses'});
+ return b.commit();
+}
+test('pasted typo does not deny fund creation but prevents a ledger mosque update',async()=>{
+ const db=await setup(original.replace(exact,bad));
+ await assertSucceeds(fund(db));
+ await assertFails(expense(db));
+});
+test('empty expense entry alone prevents expense while leaving fund creation allowed',async()=>{
+ const db=await setup(original.replace(exact,exact.replace("['contributions','expenses']","['contributions','']")));
+ await assertSucceeds(fund(db));
+ await assertFails(expense(db));
 });
