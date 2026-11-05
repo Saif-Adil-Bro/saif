@@ -58,3 +58,28 @@ test('partial, stale, forged, unauthorized and overdrawn corrections fail',async
  await assertFails(mutate(db,'contributions','c','overdraw','delete',{voided:true},[['/funds/a',field(-100,'overdraw')],['/donors/d',donor(0,'overdraw')],['',total(5000,'overdraw')]]));
  assert.equal((await getDoc(doc(db,'mosques/m/funds/a'))).data().balancePoisha,8000);
 });
+test('replay, stale snapshots, cross-tenant actor and deleted record cannot mutate balances',async()=>{
+ const db=dbFor('admin'); const ref=doc(db,'mosques/m/expenses/x'); const old=(await getDoc(ref)).data();
+ await assertSucceeds(mutate(db,'expenses','x','first','update',{title:'Electricity'},[['/funds/a',field(8000,'first')]]));
+ await assertFails(mutate(db,'expenses','x','second','update',{title:'Stale'},[['/funds/a',field(8000,'second')]],{before:old}));
+ await assertFails(mutate(db,'expenses','x','first','update',{title:'Replay'},[['/funds/a',field(8000,'first')]]));
+ await assertFails(mutate(dbFor('other'),'expenses','x','cross','delete',{voided:true},[['/funds/a',field(9000,'cross')],['',total(11000,'cross')]],{uid:'other'}));
+ assert.equal((await getDoc(ref)).data().title,'Electricity');
+});
+test('reversing a transfer or contribution cannot spend money already used',async()=>{
+ const db=dbFor('admin');
+ await env.withSecurityRulesDisabled(async ctx => {
+  const b=writeBatch(ctx.firestore());
+  b.update(doc(ctx.firestore(),'mosques/m/funds/b'),{balance:5,balancePoisha:500});
+  b.update(doc(ctx.firestore(),'mosques/m/funds/a'),{balance:30,balancePoisha:3000});
+  b.update(doc(ctx.firestore(),'mosques/m'),{totalBalance:35,totalBalancePoisha:3500});
+  await b.commit();
+ });
+ await assertFails(mutate(db,'transfers','t','tdelete','delete',{voided:true},[['/funds/a',field(5000,'tdelete')],['/funds/b',field(-1500,'tdelete')]]));
+ await assertFails(mutate(db,'contributions','c','cdelete','delete',{voided:true},[['/funds/a',field(-2000,'cdelete')],['/donors/d',donor(0,'cdelete')],['',total(-1500,'cdelete')]]));
+});
+test('receipt cannot be forged without the exact linked record and totals',async()=>{
+ const db=dbFor('admin'); const old=(await getDoc(doc(db,'mosques/m/expenses/x'))).data();
+ await assertFails(setDoc(doc(db,'mosques/m/ledgerMutations/alone'),{uid:'admin',kind:'expenses',targetId:'x',action:'delete',oldAmountPoisha:1000,newAmountPoisha:0,before:old,after:{...old,voided:true,ledgerMutationId:'alone'}}));
+ await assertFails(updateDoc(doc(db,'mosques/m/funds/a'),field(9000,'alone')));
+});
