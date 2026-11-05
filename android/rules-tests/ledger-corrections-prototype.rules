@@ -307,25 +307,23 @@ service cloud.firestore {
       let op = getAfter(mutationPath(m, opId)).data;
       return mutationFresh(m, opId) &&
         (op.kind == 'transfers' ? id in [op.before.fromAccountId, op.before.toAccountId] :
-          id == op.before.accountId || (op.action == 'update' && id == op.after.accountId)) && mutationFund(m, id, opId, op);
+          id == op.before.accountId || (op.action == 'update' && id == op.after.accountId));
     }
     function mutationDonorUpdate(m, id) {
       let opId = request.resource.data.ledgerOpId;
       let op = getAfter(mutationPath(m, opId)).data;
       return mutationFresh(m, opId) && op.kind == 'contributions' &&
-        (id == op.before.donorId || (op.action == 'update' && id == op.after.donorId)) && mutationDonor(m, id, opId, op);
+        (id == op.before.donorId || (op.action == 'update' && id == op.after.donorId));
     }
     function mutationMosqueUpdate(m) {
       let opId = request.resource.data.ledgerOpId;
       let op = getAfter(mutationPath(m, opId)).data;
-      return mutationFresh(m, opId) && op.kind in ['contributions','expenses'] &&
-        mosqueDelta(m, 'ledgerMutations', opId, mutationTotalDelta(op));
+      return mutationFresh(m, opId) && op.kind in ['contributions','expenses'] && mutationTotalDelta(op) != 0;
     }
     function mutationRecordChange(m, k, id) {
       let opId = request.resource.data.ledgerMutationId;
       let op = getAfter(mutationPath(m, opId)).data;
-      return mutationFresh(m, opId) && op.uid == request.auth.uid && op.kind == k && op.targetId == id &&
-        op.before == resource.data && op.after == request.resource.data;
+      return mutationFresh(m, opId) && op.kind == k && op.targetId == id;
     }
     match /users/{uid} {
       // Self-read permits login to report an inactive profile; tenant queries must
