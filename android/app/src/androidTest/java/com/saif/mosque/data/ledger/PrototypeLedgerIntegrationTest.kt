@@ -102,6 +102,18 @@ class PrototypeLedgerIntegrationTest {
         withTimeout(45_000) { while (store.list(base.uid, base.mosqueId).isNotEmpty()) delay(250) }
         assertEquals(500L, parent.collection("funds").document("main").get(Source.SERVER).await().getLong("balancePoisha"))
         assertFalse(parent.collection("contributions").document("legacy").get(Source.SERVER).await().exists())
+        // A retried head also resumes its dependents in order after external funds arrive.
+        val shortage = base.copy(id="blocked-shortage", kind="expenses", donorId="", donorName="", title="Shortage", amountPoisha=600)
+        val afterShortage = base.copy(id="after-shortage", amountPoisha=100)
+        store.enqueue(shortage); store.enqueue(afterShortage)
+        assertEquals(ListenableWorker.Result.success(), sync(shortage))
+        assertEquals(listOf("BLOCKED", "PENDING"), store.list(base.uid, base.mosqueId).map { it.state })
+        writer.commit(base.copy(id="external-income", amountPoisha=200))
+        LedgerQueue(app, auth).retry(shortage)
+        withTimeout(45_000) { while (store.list(base.uid, base.mosqueId).isNotEmpty()) delay(250) }
+        assertEquals(200L, parent.collection("funds").document("main").get(Source.SERVER).await().getLong("balancePoisha"))
+        assertTrue(parent.collection("expenses").document(shortage.id).get(Source.SERVER).await().exists())
+        assertTrue(parent.collection("contributions").document(afterShortage.id).get(Source.SERVER).await().exists())
         auth.signInWithEmailAndPassword("other-ledger@example.test", "test-only-password").await()
         assertTrue(runCatching { writer.commit(base.copy(id="wrong-user")) }.isFailure)
         auth.signOut()
