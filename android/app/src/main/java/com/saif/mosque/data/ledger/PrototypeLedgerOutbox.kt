@@ -51,7 +51,7 @@ class PrototypeLedgerOutbox internal constructor(context: Context, name: String 
     suspend fun list(uid: String, mosqueId: String, kind: String? = null): List<PrototypeQueuedLedger> = withContext(Dispatchers.IO) {
         val where = if (kind == null) "uid = ? AND mosque_id = ?" else "uid = ? AND mosque_id = ? AND kind = ?"
         val args = if (kind == null) arrayOf(uid, mosqueId) else arrayOf(uid, mosqueId, kind)
-        readableDatabase.query("entries", null, where, args, null, null, "created_at ASC, id ASC").use { cursor ->
+        readableDatabase.query("entries", null, where, args, null, null, "rowid ASC").use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
                     val draft = gson.fromJson(cursor.getString(cursor.getColumnIndexOrThrow("payload")), PrototypeLedgerDraft::class.java)

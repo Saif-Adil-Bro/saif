@@ -37,6 +37,7 @@ class PrototypeLedgerWriter(private val db: FirebaseFirestore, private val curre
                 if (existing.data != record) throw LedgerOperationConflict()
             } else {
                 val mosqueSnapshot = tx.get(parent)
+                if (mosqueSnapshot.getLong("ledgerVersion") != 2L) throw LedgerMigrationRequired()
                 val fundSnapshot = tx.get(fund)
                 val destinationSnapshot = destination?.let { tx.get(it) }
                 val donorSnapshot = donor?.let { tx.get(it) }

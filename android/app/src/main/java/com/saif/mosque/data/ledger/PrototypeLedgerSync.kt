@@ -27,7 +27,12 @@ object PrototypeLedgerSync {
             .setInputData(workDataOf("id" to draft.id, "uid" to draft.uid, "mosqueId" to draft.mosqueId))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("prototype-ledger-${draft.id}", ExistingWorkPolicy.KEEP, request)
+        // Serialize one tenant/account's queue in local insertion order. Separate
+        // users or mosques can sync independently; retries keep their chain position.
+        val scope = java.security.MessageDigest.getInstance("SHA-256")
+            .digest((draft.uid + "\u0000" + draft.mosqueId).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        WorkManager.getInstance(context).enqueueUniqueWork("ledger-scope-$scope", ExistingWorkPolicy.KEEP, request)
         scheduleRecovery(context)
     }
     fun scheduleRecovery(context: Context) {
@@ -37,8 +42,8 @@ object PrototypeLedgerSync {
             "prototype-ledger-recovery", ExistingPeriodicWorkPolicy.KEEP, request)
     }
     suspend fun schedulePending(context: Context, uid: String, mosqueId: String) {
-        PrototypeLedgerOutbox.get(context).list(uid, mosqueId).filter { it.state == "PENDING" }
-            .forEach { schedule(context, it.draft) }
+        PrototypeLedgerOutbox.get(context).list(uid, mosqueId).firstOrNull { it.state == "PENDING" }
+            ?.let { schedule(context, it.draft) }
         scheduleRecovery(context)
     }
 }
@@ -58,15 +63,25 @@ class PrototypeLedgerRecoveryWorker(context: Context, params: WorkerParameters) 
 
 class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val id = inputData.getString("id") ?: return Result.failure()
         val uid = inputData.getString("uid") ?: return Result.failure()
         val mosqueId = inputData.getString("mosqueId") ?: return Result.failure()
         val container = (applicationContext as MosqueApp).container
-        if (container.auth.currentUser?.uid != uid) return Result.success()
         val store = PrototypeLedgerOutbox.get(applicationContext)
-        val row = try { store.list(uid, mosqueId).firstOrNull { it.draft.id == id } }
-            catch (e: CancellationException) { throw e } catch (_: Exception) { return Result.failure() }
-        if (row == null || row.state != "PENDING") return Result.success()
+        // Drain a single tenant in SQLite insertion order. The unique scope work
+        // prevents independent requests from spending before earlier local income.
+        while (container.auth.currentUser?.uid == uid) {
+            val row = try { store.list(uid, mosqueId).firstOrNull { it.state == "PENDING" } }
+                catch (e: CancellationException) { throw e } catch (_: Exception) { return Result.retry() }
+            if (row == null) return Result.success()
+            val result = syncRow(store, row, uid, mosqueId)
+            if (result != Result.success()) return result
+        }
+        return Result.success()
+    }
+
+    private suspend fun syncRow(store: PrototypeLedgerOutbox, row: PrototypeQueuedLedger, uid: String, mosqueId: String): Result {
+        val container = (applicationContext as MosqueApp).container
+        val id = row.draft.id
         try {
             // Firestore transactions can bypass disableNetwork's normal listener/write
             // path on some SDK versions. A SERVER read first ensures connectivity is

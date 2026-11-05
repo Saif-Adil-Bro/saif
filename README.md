@@ -5,6 +5,11 @@ Firebase callable Cloud Functions. The app supports Bangla and English, a platfo
 console, and tenant funds, contributions, expenses, donors, members, transfers and
 monthly reports.
 
+> **Work in progress — do not deploy this branch to production.** Ledger v2 is
+> enabled only after a coordinated migration and writer freeze. The Android app,
+> provisioning, historical-data migration and full edit/delete flows are not yet
+> complete. The setup commands below are for an isolated test project only.
+
 ## Required Firebase setup
 
 1. Create an isolated Firebase project and an Android app with package name
@@ -82,9 +87,9 @@ A safe migration
 requires client transaction changes, matching Firestore rules, and provisioning
 changes. Offline-first ledger creation/editing and automatic ledger synchronization
 also remain unimplemented. The emulator security baseline and migration acceptance criteria are in
-[`android/rules-tests/README.md`](android/rules-tests/README.md). An isolated,
-append-only integer-poisha ledger rules prototype is being tested there; it is not
-used by the app and must not be deployed. Do not switch a production project to
+[`android/rules-tests/README.md`](android/rules-tests/README.md). An append-only integer-poisha rules implementation is gated behind the server-only
+`ledgerVersion` migration marker; the matching client is not yet wired to the app.
+Neither this branch nor the isolated prototype may be deployed as a complete fix. Do not switch a production project to
 permissive rules as a workaround.
 
 ## Read-only ledger audit
@@ -125,8 +130,9 @@ replace production balances from this report.
 ## Security and accounting behavior
 
 - Firestore rules permit users to read their own profile and active tenant data;
-  tenant queries must filter by `mosqueId`. Direct ledger writes and user profile
-  creation are denied. Existing-member edits/deletions are restricted by role,
+  tenant queries must filter by `mosqueId`. Direct ledger creation is denied for
+  unmigrated tenants; v2 tenants allow only atomic, rules-validated append operations.
+  Direct ledger edits/deletes and user profile creation are denied. Existing-member edits/deletions are restricted by role,
   tenant and self-protection rules; deletion requires an atomic counter decrement. Fund/donor metadata changes are constrained by role;
   creation uses a paired counter update, and financial fields cannot be changed
   by these directory rules. The Android client uses an online transaction to reject

@@ -75,6 +75,8 @@ async function ledger(uid, data) {
     await actor(tx, uid, mosqueId, kind);
     const m = await tx.get(mosque);
     if (!m.exists || !m.data().active) fail('Mosque is inactive');
+    // Prevent this legacy writer from corrupting migrated integer aggregates.
+    if (m.data().ledgerVersion === 2) fail('Ledger migrated; update the app', 'failed-precondition');
     let old = null;
     if (action !== 'add') {
       const snap = await tx.get(ref);

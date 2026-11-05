@@ -96,7 +96,7 @@ class LedgerRepository(
     suspend fun addFund(mosqueId: String, fund: Fund) = addDirectory(mosqueId, "funds", mapOf(
         "mosqueId" to mosqueId, "name" to fund.name.trim(), "code" to fund.code.trim(),
         "nameEn" to fund.nameEn.trim(), "description" to fund.description.trim(),
-        "active" to fund.active, "balance" to 0
+        "active" to fund.active, "balance" to 0, "balancePoisha" to 0L
     ))
     suspend fun updateFund(mosqueId: String, old: Fund, fund: Fund) {
         val ref = coll(mosqueId, "funds").document(old.id)
@@ -114,7 +114,7 @@ class LedgerRepository(
     }
     suspend fun addDonor(mosqueId: String, donor: Donor) = addDirectory(mosqueId, "donors", mapOf(
         "mosqueId" to mosqueId, "name" to donor.name.trim(), "phone" to donor.phone.trim(),
-        "address" to donor.address.trim(), "active" to donor.active, "totalDonated" to 0,
+        "address" to donor.address.trim(), "active" to donor.active, "totalDonated" to 0, "totalDonatedPoisha" to 0L,
         "createdAt" to System.currentTimeMillis()
     ))
     suspend fun updateDonor(mosqueId: String, old: Donor, donor: Donor) {

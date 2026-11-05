@@ -97,3 +97,9 @@ test('fund metadata updates do not overwrite the current balance', async () => {
   await call({operation:'directory', kind:'funds', action:'update', mosqueId:'m', id:'f', value:{name:'Fund', code:'GEN', active:true, balance:1}});
   assert.equal(docs.get('mosques/m/funds/f').balance, 1000);
 });
+
+test('legacy callable refuses writes after v2 migration', async () => {
+  docs.get('mosques/m').ledgerVersion = 2;
+  await assert.rejects(call({operation:'ledger',kind:'expenses',action:'add',mosqueId:'m',value:{accountId:'f',amount:1,title:'Test',date:'2026-01-01'}}), /migrated/);
+  assert.equal(docs.get('mosques/m/funds/f').balance, 1000);
+});

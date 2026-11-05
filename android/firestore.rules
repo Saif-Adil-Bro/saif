@@ -42,8 +42,8 @@ service cloud.firestore {
       let counter = kind == 'funds' ? 'fundCount' : 'donorCount';
       return canDirectory(mosqueId, kind) && data.mosqueId == mosqueId && directoryFields(data, kind) &&
         (kind == 'funds'
-          ? data.keys().hasOnly(['mosqueId', 'name', 'code', 'nameEn', 'description', 'active', 'balance', 'syncOpId', 'syncOwner']) && data.balance == 0
-          : data.keys().hasOnly(['mosqueId', 'name', 'phone', 'address', 'active', 'totalDonated', 'createdAt', 'syncOpId', 'syncOwner']) && data.totalDonated == 0 && data.createdAt is int) &&
+          ? data.keys().hasOnly(['mosqueId', 'name', 'code', 'nameEn', 'description', 'active', 'balance', 'balancePoisha', 'syncOpId', 'syncOwner']) && data.balance == 0 && (!data.keys().hasAny(['balancePoisha']) || (data.balancePoisha is int && data.balancePoisha == 0)) && (get(mosque).data.get('ledgerVersion', 0) != 2 || data.get('balancePoisha', -1) == 0)
+          : data.keys().hasOnly(['mosqueId', 'name', 'phone', 'address', 'active', 'totalDonated', 'totalDonatedPoisha', 'createdAt', 'syncOpId', 'syncOwner']) && data.totalDonated == 0 && (!data.keys().hasAny(['totalDonatedPoisha']) || (data.totalDonatedPoisha is int && data.totalDonatedPoisha == 0)) && (get(mosque).data.get('ledgerVersion', 0) != 2 || data.get('totalDonatedPoisha', -1) == 0) && data.createdAt is int) &&
         (!data.keys().hasAny(['syncOpId', 'syncOwner']) ||
           (data.syncOpId == docId && data.syncOwner == request.auth.uid)) &&
         getAfter(mosque).data.directoryOpId == docId && getAfter(mosque).data.directoryOpKind == kind &&
@@ -112,6 +112,117 @@ service cloud.firestore {
         get(mosque).data.memberCount is int && get(mosque).data.memberCount > 0 &&
         getAfter(mosque).data.memberCount == get(mosque).data.memberCount - 1;
     }
+    // Ledger v2 is opt-in only after a coordinated backup, audit, migration and writer freeze.
+    function mosquePath(m) { return /databases/$(database)/documents/mosques/$(m); }
+    function fundPath(m, id) { return /databases/$(database)/documents/mosques/$(m)/funds/$(id); }
+    function donorPath(m, id) { return /databases/$(database)/documents/mosques/$(m)/donors/$(id); }
+    function opPath(m, k, id) { return /databases/$(database)/documents/mosques/$(m)/$(k)/$(id); }
+    function canMoney(m, k) {
+      return request.auth != null && me().active == true &&
+        (me().role == 'SUPERADMIN' || (me().mosqueId == m &&
+          (me().role in ['ADMIN', 'SECRETARY', 'TREASURER'] ||
+            (k in ['contributions', 'expenses'] && me().role == 'CASHIER')))) &&
+        get(mosquePath(m)).data.active == true && get(mosquePath(m)).data.get('ledgerVersion', 0) == 2;
+    }
+    function text(x, required) {
+      return x is string && x.size() <= 1000 && (!required || x.size() > 0);
+    }
+    function validId(x) { return x is string && x.size() > 0 && x.size() <= 1500 && x.matches('^[^/]+$'); }
+    function money(cents, taka) {
+      return cents is int && cents >= 0 && cents <= 900000000000000 &&
+        taka is number && taka == cents / 100.0;
+    }
+    function amount(op) {
+      return op.amountPoisha is int && op.amountPoisha > 0 && op.amountPoisha <= 900000000000000 &&
+        money(op.amountPoisha, op.amount);
+    }
+    function shape(op, m, k) {
+      return op.mosqueId == m && op.createdBy == request.auth.uid && amount(op) &&
+        op.date is string && op.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$') &&
+        text(op.note, false) && op.createdAt is int &&
+        (k == 'contributions' ?
+          op.keys().hasOnly(['mosqueId','amount','amountPoisha','accountId','donorId','donorName','date','note','receiptNo','createdBy','createdAt']) &&
+          validId(op.accountId) && op.donorId is string && (op.donorId == '' || validId(op.donorId)) &&
+          text(op.donorName, true) && text(op.receiptNo, false)
+         : k == 'expenses' ?
+          op.keys().hasOnly(['mosqueId','amount','amountPoisha','accountId','title','category','paidTo','date','note','receiptNo','status','approvedBy','createdBy','createdAt']) &&
+          validId(op.accountId) && text(op.title, true) && text(op.category, false) && text(op.paidTo, false) &&
+          text(op.receiptNo, false) && op.status == 'approved' && op.approvedBy == ''
+         : k == 'transfers' &&
+          op.keys().hasOnly(['mosqueId','amount','amountPoisha','fromAccountId','toAccountId','date','note','createdBy','createdAt']) &&
+          validId(op.fromAccountId) && validId(op.toAccountId) && op.fromAccountId != op.toAccountId);
+    }
+    function fundDelta(m, id, k, opId, delta) {
+      let path = fundPath(m, id);
+      let old = get(path).data;
+      let next = getAfter(path).data;
+      return old.mosqueId == m && old.active == true && money(old.balancePoisha, old.balance) &&
+        money(next.balancePoisha, next.balance) && next.balancePoisha == old.balancePoisha + delta &&
+        next.ledgerOpId == opId && next.ledgerOpKind == k &&
+        next.diff(old).affectedKeys().hasOnly(['balance','balancePoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function mosqueDelta(m, k, opId, delta) {
+      let path = mosquePath(m);
+      let old = get(path).data;
+      let next = getAfter(path).data;
+      return old.active == true && money(old.totalBalancePoisha, old.totalBalance) &&
+        money(next.totalBalancePoisha, next.totalBalance) && next.totalBalancePoisha == old.totalBalancePoisha + delta &&
+        next.ledgerOpId == opId && next.ledgerOpKind == k &&
+        next.diff(old).affectedKeys().hasOnly(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function donorDelta(m, id, opId, cents, name) {
+      let path = donorPath(m, id);
+      let old = get(path).data;
+      let next = getAfter(path).data;
+      return old.mosqueId == m && old.active == true && old.name == name &&
+        money(old.totalDonatedPoisha, old.totalDonated) && money(next.totalDonatedPoisha, next.totalDonated) &&
+        next.totalDonatedPoisha == old.totalDonatedPoisha + cents && next.ledgerOpId == opId &&
+        next.ledgerOpKind == 'contributions' &&
+        next.diff(old).affectedKeys().hasOnly(['totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function createLedger(m, k, id) {
+      let op = request.resource.data;
+      return canMoney(m, k) && shape(op, m, k) &&
+        (k == 'contributions' ?
+          fundDelta(m, op.accountId, k, id, op.amountPoisha) && mosqueDelta(m, k, id, op.amountPoisha) &&
+          (op.donorId == '' || donorDelta(m, op.donorId, id, op.amountPoisha, op.donorName))
+         : k == 'expenses' ?
+          fundDelta(m, op.accountId, k, id, -op.amountPoisha) && mosqueDelta(m, k, id, -op.amountPoisha)
+         : fundDelta(m, op.fromAccountId, k, id, -op.amountPoisha) &&
+          fundDelta(m, op.toAccountId, k, id, op.amountPoisha));
+    }
+    function freshOp(m, k, id) {
+      let path = opPath(m, k, id);
+      return k in ['contributions','expenses','transfers'] && !exists(path) && existsAfter(path);
+    }
+    function fundUpdate(m, id) {
+      let next = request.resource.data;
+      let k = next.ledgerOpKind;
+      let opId = next.ledgerOpId;
+      let op = getAfter(opPath(m, k, opId)).data;
+      return validId(opId) && canMoney(m, k) && freshOp(m, k, opId) && shape(op, m, k) &&
+        (k == 'contributions' && op.accountId == id && fundDelta(m, id, k, opId, op.amountPoisha) ||
+         k == 'expenses' && op.accountId == id && fundDelta(m, id, k, opId, -op.amountPoisha) ||
+         k == 'transfers' && op.fromAccountId == id && fundDelta(m, id, k, opId, -op.amountPoisha) ||
+         k == 'transfers' && op.toAccountId == id && fundDelta(m, id, k, opId, op.amountPoisha));
+    }
+    function mosqueUpdate(m) {
+      let next = request.resource.data;
+      let k = next.ledgerOpKind;
+      let opId = next.ledgerOpId;
+      let op = getAfter(opPath(m, k, opId)).data;
+      return validId(opId) && k in ['contributions','expenses'] && canMoney(m, k) &&
+        freshOp(m, k, opId) && shape(op, m, k) &&
+        mosqueDelta(m, k, opId, k == 'contributions' ? op.amountPoisha : -op.amountPoisha);
+    }
+    function donorUpdate(m, id) {
+      let next = request.resource.data;
+      let opId = next.ledgerOpId;
+      let op = getAfter(opPath(m, 'contributions', opId)).data;
+      return validId(opId) && next.ledgerOpKind == 'contributions' && canMoney(m, 'contributions') &&
+        freshOp(m, 'contributions', opId) && shape(op, m, 'contributions') && op.donorId == id &&
+        donorDelta(m, id, opId, op.amountPoisha, op.donorName);
+    }
     match /users/{uid} {
       // Self-read permits login to report an inactive profile; tenant queries must
       // constrain mosqueId and cannot read profiles from a different tenant.
@@ -132,13 +243,16 @@ service cloud.firestore {
         ])
         && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
         || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
-        || memberCounterDelete(mosqueId);
+        || memberCounterDelete(mosqueId) || mosqueUpdate(mosqueId);
       match /{collection}/{doc} {
         allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts']
           && (platform() || activeTenant(mosqueId));
         allow create: if (collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc))
-          || (collection == 'syncReceipts' && receiptCreate(mosqueId, doc));
-        allow update: if collection in ['funds', 'donors'] && directoryUpdate(mosqueId, collection, doc);
+          || (collection == 'syncReceipts' && receiptCreate(mosqueId, doc))
+          || (collection in ['contributions', 'expenses', 'transfers'] && createLedger(mosqueId, collection, doc));
+        allow update: if (collection in ['funds', 'donors'] && directoryUpdate(mosqueId, collection, doc))
+          || (collection == 'funds' && fundUpdate(mosqueId, doc))
+          || (collection == 'donors' && donorUpdate(mosqueId, doc));
         allow delete: if false;
       }
     }

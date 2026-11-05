@@ -155,11 +155,11 @@ class DirectorySyncWorker(context: Context, params: WorkerParameters) : Coroutin
             val fields: Map<String, Any> = when (draft.kind) {
                 "funds" -> gson.fromJson(draft.payload, Fund::class.java).let { f -> mapOf(
                     "mosqueId" to draft.mosqueId, "name" to f.name, "code" to f.code,
-                    "nameEn" to f.nameEn, "description" to f.description, "active" to f.active, "balance" to 0,
+                    "nameEn" to f.nameEn, "description" to f.description, "active" to f.active, "balance" to 0, "balancePoisha" to 0L,
                     "syncOpId" to draft.id, "syncOwner" to draft.uid) }
                 else -> gson.fromJson(draft.payload, Donor::class.java).let { d -> mapOf(
                     "mosqueId" to draft.mosqueId, "name" to d.name, "phone" to d.phone, "address" to d.address,
-                    "active" to d.active, "totalDonated" to 0, "createdAt" to draft.createdAt,
+                    "active" to d.active, "totalDonated" to 0, "totalDonatedPoisha" to 0L, "createdAt" to draft.createdAt,
                     "syncOpId" to draft.id, "syncOwner" to draft.uid) }
             }
             val counter = if (draft.kind == "funds") "fundCount" else "donorCount"

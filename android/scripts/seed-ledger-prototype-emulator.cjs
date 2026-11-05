@@ -18,7 +18,7 @@ async function main() {
   const batch=db.batch();
   batch.set(db.doc('users/ledger-admin'),{active:true,role:'ADMIN',mosqueId:'ledger-prototype'});
   batch.set(db.doc('users/ledger-other'),{active:true,role:'ADMIN',mosqueId:'elsewhere'});
-  batch.set(db.doc('mosques/ledger-prototype'),{active:true,totalBalance:100,totalBalancePoisha:10000});
+  batch.set(db.doc('mosques/ledger-prototype'),{active:true,ledgerVersion:2,totalBalance:100,totalBalancePoisha:10000});
   batch.set(db.doc('mosques/ledger-prototype/funds/main'),{active:true,mosqueId:'ledger-prototype',balance:100,balancePoisha:10000});
   batch.set(db.doc('mosques/ledger-prototype/funds/target'),{active:true,mosqueId:'ledger-prototype',balance:0,balancePoisha:0});
   batch.set(db.doc('mosques/ledger-prototype/funds/legacy'),{active:true,mosqueId:'ledger-prototype',balance:0});

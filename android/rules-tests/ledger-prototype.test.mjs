@@ -9,7 +9,7 @@ let env;
 before(async () => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error('Use the Firestore emulator');
   env = await initializeTestEnvironment({ projectId: 'demo-mosque-rules',
-    firestore: { rules: readFileSync(new URL('./ledger-prototype.rules', import.meta.url), 'utf8') } });
+    firestore: { rules: readFileSync(new URL(process.env.LEDGER_INTEGRATED ? '../firestore.rules' : './ledger-prototype.rules', import.meta.url), 'utf8') } });
 });
 beforeEach(async () => {
   await env.clearFirestore();
@@ -21,8 +21,8 @@ beforeEach(async () => {
       setDoc(doc(db, 'users/member'), { active:true, role:'MEMBER', mosqueId:'a' }),
       setDoc(doc(db, 'users/other'), { active:true, role:'ADMIN', mosqueId:'b' }),
       setDoc(doc(db, 'users/inactive'), { active:false, role:'ADMIN', mosqueId:'a' }),
-      setDoc(doc(db, 'mosques/a'), { active:true, totalBalance:100, totalBalancePoisha:10000 }),
-      setDoc(doc(db, 'mosques/b'), { active:true, totalBalance:0, totalBalancePoisha:0 }),
+      setDoc(doc(db, 'mosques/a'), { active:true, ledgerVersion:2, totalBalance:100, totalBalancePoisha:10000 }),
+      setDoc(doc(db, 'mosques/b'), { active:true, ledgerVersion:2, totalBalance:0, totalBalancePoisha:0 }),
       setDoc(doc(db, 'mosques/a/funds/general'), { mosqueId:'a', active:true, name:'General', balance:100, balancePoisha:10000 }),
       setDoc(doc(db, 'mosques/a/funds/other'), { mosqueId:'a', active:true, name:'Other', balance:0, balancePoisha:0 }),
       setDoc(doc(db, 'mosques/a/funds/archived'), { mosqueId:'a', active:false, name:'Archived', balance:0, balancePoisha:0 }),

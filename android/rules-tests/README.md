@@ -1,9 +1,10 @@
 # Firestore security regression baseline
 
 These tests describe the security boundary of the proposed partial Spark migration.
-They exercise direct fund/donor directory writes as well as forbidden ledger writes.
-The full Spark migration is **not** complete: the rules deny direct ledger writes,
-so they cannot be deployed as a complete fix for the current `NOT_FOUND` error.
+They exercise direct fund/donor directory writes, denial of legacy ledger writes,
+and atomic ledger v2 creates when an admin-only migration flag is set.
+The full Spark migration is **not** complete and must not be deployed as a fix for
+`NOT_FOUND`. The app's ledger and provisioning are not yet connected to v2.
 Rules and client must be reviewed and tested together before any rollout.
 
 To run locally, install JDK 17+ and Firebase CLI and execute:
@@ -32,15 +33,16 @@ into the app's repository or UI**. A separate experimental SQLite outbox stores
 immutable UID/mosque-scoped drafts and is excluded from backup. An experimental
 WorkManager worker and periodic recovery are exercised only by the isolated
 emulator tests; no production screen or startup path schedules them, so they do
-not yet sync user data. Pending operations are currently scheduled individually,
-not in guaranteed user-entry order; a production rollout must address ordering and
-conflicts between dependent offline operations. The prototype does not yet support edits,
+not yet sync user data. One WorkManager task drains each account/tenant in local
+insertion order; periodic recovery covers a missed scheduling attempt. Real device
+behavior, dependent-operation conflicts and rollout remain to be validated. The prototype does not yet support edits,
 deletes, historical-data migration or full rules-level
 calendar-date validation.
 The experiment uses new `balancePoisha`, `totalBalancePoisha` and
 `totalDonatedPoisha` aggregate fields alongside the existing taka fields. The
-current callable backend does not maintain these fields, so mixing the two would
-corrupt the prototype's assumptions. Never deploy or point production traffic at
+legacy callable backend does not maintain these fields. The updated callable
+refuses ledger writes after v2 is enabled, but an older deployed callable or other
+privileged writer can still corrupt the assumptions unless removed or frozen. Never deploy or point production traffic at
 this file. A safe migration must freeze or upgrade all writers, back up and
 reconcile historic data, initialize and verify integer fields, and test the
 matching client, rules, concurrency, retries and rollout/rollback together.
