@@ -86,11 +86,32 @@ Financial edits/deletes and new-account provisioning still depend on Cloud
 Functions, so the complete app remains incompatible with Spark-only production.
 
 Before enabling v2, all legacy writers must be frozen or upgraded, and the tenant's
-complete historical data backed up, reconciled, and migrated. No automatic
-migration or rollout is provided yet. Installing rules or the app alone can block
-existing operations or produce inconsistent balances if an older privileged writer
+complete historical data backed up, reconciled, and migrated. A gated, restartable maintenance migration tool is under test, but rollout is not
+complete. Installing rules or the app alone can block existing operations or produce inconsistent balances if an older privileged writer
 continues. Emulator tests are not a substitute for real-device/network testing.
 See [`android/rules-tests/README.md`](android/rules-tests/README.md).
+
+## Ledger v2 maintenance migration (test environments only)
+
+`android/scripts/migrate-ledger.mjs` is an experimental Admin SDK maintenance tool.
+Do not use it on production until the complete workflow and rollout are reviewed.
+It freezes the mosque, requires explicitly supplied opening amounts for every fund
+and donor, audits a full snapshot, initializes integer fields without changing the
+stored balances, verifies them, and activates v2 only at the end. A failed or
+interrupted run leaves the mosque frozen and can be resumed after investigation.
+
+It cannot itself stop other Admin SDK clients or old privileged writers, back up
+or restore a project, or prove that an export contains all historical activity.
+A qualified operator must back up and stop **all** privileged writers first;
+the rules cannot constrain Admin SDK writes. Incorrect openings or missing history
+can invalidate the audit. Do not turn on the v2 marker manually. No project
+credentials belong in this repository or chat.
+
+For an isolated emulator only, with Admin SDK dependencies installed and emulator
+environment configured, use `begin` then `apply` with `--project`, `--mosque`,
+`--i-stopped-all-privileged-writers-and-backed-up`, and an `--openings` JSON file
+for apply. Example openings: `{"openingFunds":{"fund-id":0},"openingDonors":{"donor-id":0}}`;
+include every ID, even for a zero opening. This is not a production runbook.
 
 ## Read-only ledger audit
 

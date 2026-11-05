@@ -284,3 +284,13 @@ test('ledger migration flag cannot be self-enabled and v2 directory entries requ
   await assertSucceeds(createDirectory(db, 'donors', 'new-client', {...donor(), totalDonatedPoisha:0}));
   await assertFails(updateDoc(doc(db, 'mosques/a/funds/new-client'), {balancePoisha:1}));
 });
+
+test('platform cannot reactivate or modify a frozen tenant during ledger migration', async () => {
+  const db = dbFor('platform');
+  await env.withSecurityRulesDisabled(async ctx => {
+    await updateDoc(doc(ctx.firestore(), 'mosques/a'), {active:false, ledgerMigration:'frozen'});
+  });
+  await assertFails(updateDoc(doc(db, 'mosques/a'), {active:true}));
+  await assertFails(updateDoc(doc(db, 'mosques/a'), {name:'Edited during migration'}));
+  await assertFails(updateDoc(doc(db, 'mosques/a'), {ledgerMigration:'complete'}));
+});

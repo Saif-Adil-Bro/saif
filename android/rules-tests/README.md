@@ -34,7 +34,9 @@ from confirmed totals and uses insertion order within a tenant/account. Recovery
 is scheduled on startup and periodically. A process may still die before scheduling;
 startup/periodic recovery covers that gap. Unsynced drafts are excluded from backup
 and are lost on uninstall or data clear. Edits, deletes, account provisioning and
-historical-data migration are not yet implemented for v2. Real devices, actual
+historical-data rollout are not yet complete for v2. An experimental, freeze-based
+maintenance migration tool is emulator-tested separately; it requires an operator
+to back up and stop all privileged writers and explicitly provide all openings. Real devices, actual
 network loss and role changes still need validation.
 The experiment uses new `balancePoisha`, `totalBalancePoisha` and
 `totalDonatedPoisha` aggregate fields alongside the existing taka fields. The

@@ -237,7 +237,7 @@ service cloud.firestore {
       allow create, delete: if false;
       allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind'])
         ? mosqueUpdate(mosqueId)
-        : ((platform()
+        : ((platform() && resource.data.get('ledgerMigration', '') != 'frozen'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
           'establishedYear', 'registrationNo', 'active'
