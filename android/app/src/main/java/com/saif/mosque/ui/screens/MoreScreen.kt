@@ -166,8 +166,8 @@ private fun AuditTrailDialog(container: AppContainer, mosqueId: String, onDismis
                 mutations.take(25).forEach { m ->
                     val actionLabel = if (m.action == "delete") stringResource(R.string.audit_action_delete)
                     else stringResource(R.string.audit_action_update)
-                    val oldTaka = com.saif.mosque.util.Format.taka(m.oldAmountPoisha / 100.0)
-                    val newTaka = com.saif.mosque.util.Format.taka(m.newAmountPoisha / 100.0)
+                    val oldTaka = com.saif.mosque.util.Format.money(m.oldAmountPoisha / 100.0)
+                    val newTaka = com.saif.mosque.util.Format.money(m.newAmountPoisha / 100.0)
                     Card(
                         Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
