@@ -321,14 +321,15 @@ service cloud.firestore {
       allow create, delete: if false;
       allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind'])
         ? mosqueUpdate(mosqueId)
-        : ((platform() && resource.data.get('ledgerMigration', '') != 'frozen'
+        : ((request.resource.data.diff(resource.data).affectedKeys().hasAny(['memberCount','memberOpId']) && memberCounterInvite(mosqueId))
+        || (platform() && resource.data.get('ledgerMigration', '') != 'frozen'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
           'establishedYear', 'registrationNo', 'active'
         ])
         && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
         || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
-        || memberCounterInvite(mosqueId) || memberCounterDelete(mosqueId));
+        || memberCounterDelete(mosqueId));
       match /memberClaims/{email} {
         allow get: if signedIn() && ((request.auth.token.get('email_verified', false) == true &&
           request.auth.token.get('email', '') == email) || canDirectory(mosqueId, 'funds'));

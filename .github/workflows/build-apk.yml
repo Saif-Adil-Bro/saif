@@ -156,7 +156,7 @@ jobs:
               full = log.read_text(errors='replace')
               lines = full.splitlines()
               failures = [i for i, line in enumerate(lines) if line.startswith('not ok ')]
-              text = '\n'.join('\n'.join(lines[i:i+16]) for i in failures)[:3500] if failures else full[-3500:]
+              text = '\n'.join('\n'.join(lines[i:i+55]) for i in failures)[:10000] if failures else full[-3500:]
               print('::error::Rules test failures: ' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
           PYCODE
 
