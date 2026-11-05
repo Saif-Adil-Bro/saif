@@ -18,7 +18,7 @@ async function main() {
   }
   const batch = db.batch();
   for (const id of ['sync-test-mosque','sync-other-mosque']) {
-    batch.set(db.doc(`mosques/${id}`), {active: true, fundCount: 0, donorCount: 0, memberCount: 1, totalBalance: 0});
+    batch.set(db.doc(`mosques/${id}`), {active: true, address: '', createdAt: 1700000000000, district: '', donorCount: 0, email: '', establishedYear: null, fundCount: 0, memberCount: 1, name: 'Mosque', nameEn: '', phone: '', registrationNo: '', totalBalance: 0.0, upazila: ''});
   }
   batch.set(db.doc('mosques/sync-badcounter'), {active: true, donorCount: 0, memberCount: 1, totalBalance: 0});
   batch.set(db.doc('users/outbox-badcounter'), {active: true, role: 'ADMIN', mosqueId: 'sync-badcounter'});

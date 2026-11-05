@@ -41,7 +41,7 @@ class DirectorySyncIntegrationTest {
         val mosque = db.collection("mosques").document("sync-test-mosque")
         login("a@example.test")
         db.disableNetwork().await()
-        val first = store.addFund("outbox-a", "sync-test-mosque", Fund(name = "Offline fund", code = "OFF"))
+        val first = store.addFund("outbox-a", "sync-test-mosque", Fund(name = "টেস্ট", code = "TST", nameEn = "Test", description = "Test fund"))
         assertEquals("PENDING", store.find(first.id)?.state)
         // A disconnected Firestore must not acknowledge or discard the draft.
         assertEquals(ListenableWorker.Result.retry(), withTimeout(20_000) { sync(first.id) })
@@ -54,6 +54,10 @@ class DirectorySyncIntegrationTest {
         }
         assertNull(store.find(first.id))
         val fund = mosque.collection("funds").document(first.id).get(Source.SERVER).await()
+        assertEquals("টেস্ট", fund.getString("name"))
+        assertEquals("TST", fund.getString("code"))
+        assertEquals("Test", fund.getString("nameEn"))
+        assertEquals("Test fund", fund.getString("description"))
         assertEquals(first.id, fund.getString("syncOpId"))
         assertEquals("outbox-a", fund.getString("syncOwner"))
         assertEquals(1L, mosque.get(Source.SERVER).await().getLong("fundCount"))
