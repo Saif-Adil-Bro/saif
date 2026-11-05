@@ -236,31 +236,48 @@ private fun FundFormDialog(
     var nameEn by remember { mutableStateOf(initial.nameEn) }
     var description by remember { mutableStateOf(initial.description) }
     var active by remember { mutableStateOf(initial.active) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var attempted by remember { mutableStateOf(false) }
+    val tooLong = stringResource(R.string.invitation_field_too_long)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_fund else R.string.edit_fund)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LabeledField(stringResource(R.string.fund_name), name, { name = it }, error = error)
-                LabeledField(stringResource(R.string.fund_code), code, { code = it.uppercase() })
-                LabeledField(stringResource(R.string.fund_name_en), nameEn, { nameEn = it })
-                LabeledField(stringResource(R.string.description), description, { description = it }, singleLine = false)
+                LabeledField(
+                    stringResource(R.string.fund_name), name, { name = it },
+                    error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.fund_code), code, { code = it.uppercase() },
+                    error = if (attempted) Validators.required(code) ?: tooLong.takeIf { code.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.fund_name_en), nameEn, { nameEn = it },
+                    error = if (attempted) tooLong.takeIf { nameEn.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.description), description, { description = it }, singleLine = false,
+                    error = if (attempted) tooLong.takeIf { description.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
                 if (saveError) Text(stringResource(R.string.local_save_failed), color = MaterialTheme.colorScheme.error)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
                     val activeLabel = stringResource(R.string.active)
-                    Switch(checked = active, onCheckedChange = { active = it },
+                    Switch(checked = active, onCheckedChange = { active = it }, enabled = !saving,
                         modifier = Modifier.semantics { contentDescription = activeLabel })
                 }
             }
         },
         confirmButton = {
             TextButton(enabled = !saving, onClick = {
-                if (Validators.required(name) != null || Validators.required(code) != null) {
-                    error = "required"; return@TextButton
-                }
+                attempted = true
+                if (Validators.required(name) != null || Validators.required(code) != null) return@TextButton
+                if (listOf(name, code, nameEn, description).any { it.trim().length > 1000 }) return@TextButton
                 onSave(initial.copy(
                     name = name.trim(), code = code.trim().uppercase(), nameEn = nameEn.trim(),
                     description = description.trim(), active = active

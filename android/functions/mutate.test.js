@@ -112,3 +112,12 @@ test('legacy directory callable initializes integer totals for v2 tenants', asyn
   assert.equal(docs.get('mosques/m/funds/new-id').balancePoisha,0);
   assert.equal(docs.get('mosques/m/donors/new-id').totalDonatedPoisha,0);
 });
+
+test('expense records createdBy and preserves original creator on update', async () => {
+  await call({operation:'ledger',kind:'expenses',action:'add',mosqueId:'m',value:{accountId:'f',amount:25,title:'Bill',date:'2026-01-01'}});
+  const created = docs.get('mosques/m/expenses/new-id');
+  assert.equal(created.createdBy, 'u');
+  docs.set('users/admin', {active:true, mosqueId:'m', role:'ADMIN'});
+  await mutate({auth:{uid:'admin'}, data:{operation:'ledger',kind:'expenses',action:'update',mosqueId:'m',id:'new-id',expected:created,value:{...created,amount:30}}});
+  assert.equal(docs.get('mosques/m/expenses/new-id').createdBy, 'u');
+});

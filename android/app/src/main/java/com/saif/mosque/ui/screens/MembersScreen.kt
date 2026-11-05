@@ -103,7 +103,7 @@ class MembersViewModel(
     }
 
     fun update(old: AppUser, member: AppUser, done: (Msg?) -> Unit) {
-        if (member.id == user.id && !member.active) done(Msg.Res(R.string.cannot_deactivate_self))
+        if (member.id == user.id && (!member.active || member.role != old.role)) done(Msg.Res(R.string.cannot_deactivate_self))
         else mutate(done) { ledger.updateMember(mosqueId, old, member, user) }
     }
 
@@ -182,13 +182,15 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
                     items(members, key = { it.id }) { m ->
+                        val canManageTarget = canEdit && m.role != Role.SUPERADMIN &&
+                            (m.role != Role.ADMIN || user.role == Role.ADMIN || user.role == Role.SUPERADMIN)
                         com.saif.mosque.ui.components.RecordCard(
                             title = m.name + if (m.id == user.id) " · ${stringResource(R.string.you)}" else "",
                             supporting = listOf(m.email, roleLabel(m.role), m.designation)
                                 .filter { it.isNotBlank() }.joinToString(" · "),
                             status = if (!m.active) stringResource(R.string.inactive) else null,
-                            onEdit = if (canEdit) ({ editing = m }) else null,
-                            onDelete = if (canEdit && m.id != user.id) ({ deleting = m }) else null)
+                            onEdit = if (canManageTarget) ({ editing = m }) else null,
+                            onDelete = if (canManageTarget && m.id != user.id) ({ deleting = m }) else null)
                     }
                 }
             }
@@ -199,6 +201,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
         MemberFormDialog(
             initial = target,
             isNew = target.id.isEmpty(), saving = saving, saveError = saveError,
+            issuerRole = user.role, isSelf = target.id.isNotEmpty() && target.id == user.id,
             onDismiss = { editing = null; saveError = null },
             onSave = { name, email, phone, role, designation, active, password ->
                 if (!saving) {
@@ -230,19 +233,24 @@ internal fun MemberFormDialog(
     saving: Boolean,
     saveError: String?,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, Role, String, Boolean, String) -> Unit
+    onSave: (String, String, String, Role, String, Boolean, String) -> Unit,
+    issuerRole: Role = Role.ADMIN,
+    isSelf: Boolean = false
 ) {
+    val allowedRoles = listOf(Role.ADMIN, Role.PRESIDENT, Role.SECRETARY, Role.TREASURER,
+        Role.CASHIER, Role.IMAM, Role.MEMBER)
+        .filter { it != Role.ADMIN || issuerRole == Role.ADMIN || issuerRole == Role.SUPERADMIN || (!isNew && initial.role == Role.ADMIN) }
     var name by remember { mutableStateOf(initial.name) }
     var email by remember { mutableStateOf(initial.email) }
     var phone by remember { mutableStateOf(initial.phone) }
-    var role by remember { mutableStateOf(initial.role.takeIf { it != Role.SUPERADMIN } ?: Role.MEMBER) }
+    var role by remember { mutableStateOf(initial.role.takeIf { it in allowedRoles } ?: Role.MEMBER) }
     var designation by remember { mutableStateOf(initial.designation) }
     var active by remember { mutableStateOf(initial.active) }
     var password by remember { mutableStateOf("") }
     var attempted by remember { mutableStateOf(false) }
+    val tooLong = stringResource(R.string.invitation_field_too_long)
 
-    val roleOptions = listOf(Role.ADMIN, Role.PRESIDENT, Role.SECRETARY, Role.TREASURER,
-        Role.CASHIER, Role.IMAM, Role.MEMBER).map { it to roleLabel(it) }
+    val roleOptions = allowedRoles.map { it to roleLabel(it) }
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
@@ -250,13 +258,17 @@ internal fun MemberFormDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LabeledField(stringResource(R.string.name), name, { name = it },
-                    error = if (attempted) Validators.required(name) else null, enabled = !saving)
+                    error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null, enabled = !saving)
                 LabeledField(stringResource(R.string.email), email, { email = it },
-                    error = if (isNew && attempted) Validators.email(email) else null, keyboardType = KeyboardType.Email,
+                    error = if (isNew && attempted) Validators.email(email) ?: tooLong.takeIf { email.trim().length > 254 } else null, keyboardType = KeyboardType.Email,
                     readOnly = !isNew, enabled = !saving)
-                LabeledField(stringResource(R.string.phone), phone, { phone = it }, keyboardType = KeyboardType.Phone, enabled = !saving)
-                DropdownField(stringResource(R.string.role), roleOptions, role, { role = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.designation), designation, { designation = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.phone), phone, { phone = it },
+                    error = if (attempted) Validators.bdPhone(phone) else null,
+                    keyboardType = KeyboardType.Phone, enabled = !saving)
+                DropdownField(stringResource(R.string.role), roleOptions, role, { role = it }, enabled = !saving && !isSelf)
+                LabeledField(stringResource(R.string.designation), designation, { designation = it },
+                    error = if (attempted) tooLong.takeIf { designation.trim().length > 1000 } else null,
+                    enabled = !saving)
                 if (isNew) {
                     PasswordField(stringResource(R.string.password), password, { password = it },
                         error = if (attempted) Validators.password(password) else null, enabled = !saving)
@@ -264,7 +276,7 @@ internal fun MemberFormDialog(
                 if (!isNew) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
                     val activeLabel = stringResource(R.string.active)
-                    Switch(checked = active, onCheckedChange = { active = it }, enabled = !saving,
+                    Switch(checked = active, onCheckedChange = { active = it }, enabled = !saving && !isSelf,
                         modifier = Modifier.semantics { contentDescription = activeLabel })
                 }
                 saveError?.let { message ->
@@ -276,8 +288,9 @@ internal fun MemberFormDialog(
         confirmButton = {
             TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 attempted = true
-                if (Validators.required(name) != null ||
-                    (isNew && (Validators.email(email) != null || Validators.password(password) != null))) {
+                if (Validators.required(name) != null || Validators.bdPhone(phone) != null ||
+                    listOf(name, phone, designation).any { it.trim().length > 1000 } ||
+                    (isNew && (Validators.email(email) != null || email.trim().length > 254 || Validators.password(password) != null))) {
                     return@TextButton
                 }
                 onSave(name.trim(), email.trim(), phone.trim(), role, designation.trim(), active, password)

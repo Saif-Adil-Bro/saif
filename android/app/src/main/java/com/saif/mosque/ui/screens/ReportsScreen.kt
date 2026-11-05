@@ -79,15 +79,15 @@ class ReportsViewModel(
                 val contributions = repo.contributionsInRange(mosqueId, start, end)
                 val expenses = repo.expensesInRange(mosqueId, start, end)
                 val byFund = contributions.groupBy { it.accountId }
-                    .map { (acc, list) -> acc to list.sumOf { it.amount } }
+                    .map { (acc, list) -> acc to (list.sumOf { Math.round(it.amount * 100) } / 100.0) }
                     .sortedByDescending { it.second }
                 _state.value = UiState.Success(MonthlyReport(
                     year = y, month = m,
-                    income = contributions.sumOf { it.amount },
-                    expense = expenses.sumOf { it.amount },
+                    income = contributions.sumOf { Math.round(it.amount * 100) } / 100.0,
+                    expense = expenses.sumOf { Math.round(it.amount * 100) } / 100.0,
                     byFund = byFund,
-                    contributions = contributions.sortedByDescending { it.date },
-                    expenses = expenses.sortedByDescending { it.date }
+                    contributions = contributions.sortedWith(compareByDescending<com.saif.mosque.data.model.Contribution> { it.date }.thenByDescending { it.createdAt }),
+                    expenses = expenses.sortedWith(compareByDescending<com.saif.mosque.data.model.Expense> { it.date }.thenByDescending { it.createdAt })
                 ))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

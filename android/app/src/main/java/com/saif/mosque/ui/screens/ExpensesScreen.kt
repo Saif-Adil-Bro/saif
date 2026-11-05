@@ -263,27 +263,53 @@ internal fun ExpenseFormDialog(
     var paidTo by remember { mutableStateOf(initial.paidTo) }
     var receipt by remember { mutableStateOf(initial.receiptNo) }
     var note by remember { mutableStateOf(initial.note) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var attempted by remember { mutableStateOf(false) }
+    val tooLong = stringResource(R.string.invitation_field_too_long)
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_expense else R.string.edit_expense)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LabeledField(stringResource(R.string.expense_title), title, { title = it }, error = error, enabled = !saving)
-                LabeledField(stringResource(R.string.category), category, { category = it }, enabled = !saving)
+                LabeledField(
+                    stringResource(R.string.expense_title), title, { title = it },
+                    error = if (attempted) Validators.required(title) ?: tooLong.takeIf { title.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.category), category, { category = it },
+                    error = if (attempted) tooLong.takeIf { category.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
                 DropdownField(
                     label = stringResource(R.string.account),
                     options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
-                    onSelect = { accountId = it }, enabled = !saving
+                    onSelect = { accountId = it },
+                    enabled = !saving,
+                    error = if (attempted && accountId.isBlank()) "required" else null
                 )
-                LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                LabeledField(
+                    stringResource(R.string.amount), amount, { amount = it },
+                    error = if (attempted) Validators.amount(amount) else null,
+                    keyboardType = KeyboardType.Decimal, enabled = !saving
+                )
                 DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.paid_to), paidTo, { paidTo = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                LabeledField(
+                    stringResource(R.string.paid_to), paidTo, { paidTo = it },
+                    error = if (attempted) tooLong.takeIf { paidTo.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.receipt_no), receipt, { receipt = it },
+                    error = if (attempted) tooLong.takeIf { receipt.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.note), note, { note = it }, singleLine = false,
+                    error = if (attempted) tooLong.takeIf { note.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
                 saveError?.let { message ->
                     Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
@@ -292,9 +318,9 @@ internal fun ExpenseFormDialog(
         },
         confirmButton = {
             TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
-                if (Validators.required(title) != null) { error = "required"; return@TextButton }
-                if (accountId.isBlank()) { error = "required"; return@TextButton }
-                if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
+                attempted = true
+                if (Validators.required(title) != null || accountId.isBlank() || Validators.amount(amount) != null) return@TextButton
+                if (listOf(title, category, paidTo, receipt, note).any { it.trim().length > 1000 }) return@TextButton
                 onSave(initial.copy(
                     title = title.trim(), category = category.trim(), accountId = accountId,
                     amount = amount.toDouble(), date = date, paidTo = paidTo.trim(),

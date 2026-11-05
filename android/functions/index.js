@@ -60,7 +60,7 @@ function moneyRow(kind, row, mosqueId, uid) {
     return {...base, accountId: id(row.accountId), donorId, donorName, receiptNo: text(row.receiptNo ?? '')};
   }
   if (kind === 'expenses') return {...base, accountId: id(row.accountId), ...fields(row, ['title'], ['category', 'paidTo', 'receiptNo']), status: 'approved', approvedBy: ''};
-  if (kind === 'transfers') return {...base, fromAccountId: id(row.fromAccountId), toAccountId: id(row.toAccountId), createdBy: uid};
+  if (kind === 'transfers') return {...base, fromAccountId: id(row.fromAccountId), toAccountId: id(row.toAccountId)};
   fail('Invalid transaction type', 'invalid-argument');
 }
 // Explicit comparison prevents a stale editor from silently overwriting another edit.
@@ -112,7 +112,7 @@ async function ledger(uid, data) {
     if (total) tx.update(mosque, {totalBalance: totalBalance / 100});
     if (next) {
       next.createdAt = old?.createdAt ?? Date.now();
-      if (kind === 'contributions') next.createdBy = old?.createdBy ?? uid;
+      next.createdBy = old?.createdBy ?? uid;
       tx.set(ref, next);
     } else tx.delete(ref);
     return {id: ref.id};
@@ -192,8 +192,8 @@ async function createMosque(uid, data) {
     await db.runTransaction(async tx => {
       const verified = (await tx.get(db.doc(`users/${uid}`))).data();
       if (!verified?.active || verified.role !== 'SUPERADMIN') fail('Permission denied', 'permission-denied');
-      tx.create(mosque, {...details, establishedYear: year ?? null, active: true, totalBalance: 0, fundCount: 5, donorCount: 0, memberCount: 1, createdAt: Date.now()});
-      for (const [code, name] of [['GEN','সাধারণ তহবিল'],['CHD','চাঁদা তহবিল'],['CON','নির্মাণ তহবিল'],['WAK','ওয়াকফ তহবিল'],['UTL','ইউটিলিটি তহবিল']]) tx.create(mosque.collection('funds').doc(), {mosqueId: mosque.id, code, name, nameEn: '', description: '', active: true, balance: 0});
+      tx.create(mosque, {...details, establishedYear: year ?? null, active: true, ledgerVersion: 2, totalBalance: 0, totalBalancePoisha: 0, fundCount: 5, donorCount: 0, memberCount: 1, createdAt: Date.now()});
+      for (const [code, name] of [['GEN','সাধারণ তহবিল'],['CHD','চাঁদা তহবিল'],['CON','নির্মাণ তহবিল'],['WAK','ওয়াকফ তহবিল'],['UTL','ইউটিলিটি তহবিল']]) tx.create(mosque.collection('funds').doc(), {mosqueId: mosque.id, code, name, nameEn: '', description: '', active: true, balance: 0, balancePoisha: 0});
       tx.create(db.doc(`users/${account.uid}`), {name: adminName, email, phone: adminPhone, role: 'ADMIN', mosqueId: mosque.id, designation: '', active: true, createdAt: Date.now()});
     });
     return {id: mosque.id};
@@ -215,6 +215,7 @@ exports.mutate = onCall(async request => {
     }
   } catch (e) {
     if (e instanceof HttpsError) throw e;
+    if (e?.code === 'auth/email-already-exists') throw new HttpsError('already-exists', 'Email already in use');
     console.error('Mutation failed', e);
     throw new HttpsError('failed-precondition', e.message || 'Operation failed');
   }

@@ -242,6 +242,8 @@ service cloud.firestore {
           'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
           'establishedYear', 'registrationNo', 'active'
         ])
+        && shortText(request.resource.data.name, true)
+        && request.resource.data.active is bool
         && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
         || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
         || memberCounterDelete(mosqueId));

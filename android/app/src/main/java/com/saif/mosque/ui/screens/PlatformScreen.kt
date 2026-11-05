@@ -103,23 +103,34 @@ class PlatformViewModel(private val repo: PlatformRepository) : ViewModel() {
     var created: CreatedMosque? by mutableStateOf(null)
         private set
 
-    fun create(mosque: Mosque, adminName: String, adminEmail: String, adminPhone: String, adminPassword: String) {
+    fun create(
+        mosque: Mosque, adminName: String, adminEmail: String, adminPhone: String, adminPassword: String,
+        done: (Msg?) -> Unit = {}
+    ) {
         viewModelScope.launch {
-            val res = repo.createMosque(mosque, adminName, adminEmail, adminPhone, adminPassword)
-            res.onSuccess {
-                created = it
-                _messages.emit(Msg.Res(R.string.mosque_created))
-            }.onFailure { e -> _messages.emit(Msg.Text(e.message ?: "error")) }
+            try {
+                val res = repo.createMosque(mosque, adminName, adminEmail, adminPhone, adminPassword)
+                res.onSuccess {
+                    created = it
+                    done(null)
+                    _messages.emit(Msg.Res(R.string.mosque_created))
+                }.onFailure { e ->
+                    done(Msg.Text(e.message ?: "error"))
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { done(Msg.Text(e.message ?: "error")) }
         }
     }
 
-    fun update(mosque: Mosque) {
+    fun update(mosque: Mosque, done: (Msg?) -> Unit = {}) {
         viewModelScope.launch {
             try {
                 repo.updateMosque(mosque)
+                done(null)
                 _messages.emit(Msg.Res(R.string.saved_ok))
-            } catch (e: Exception) {
-                _messages.emit(Msg.Text(e.message ?: "error"))
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                done(Msg.Text(e.message ?: "error"))
             }
         }
     }
@@ -153,6 +164,8 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(Filter.All) }
     var editing by remember { mutableStateOf<Mosque?>(null) }   // null=closed, Mosque()=new, else edit
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     var pendingDeactivate by remember { mutableStateOf<Mosque?>(null) }
     var confirmLogout by remember { mutableStateOf(false) }
 
@@ -210,7 +223,7 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
                         com.saif.mosque.ui.components.StatItem(stringResource(R.string.total_mosques), Format.bn(mosques.size)),
                         com.saif.mosque.ui.components.StatItem(stringResource(R.string.active_mosques), Format.bn(mosques.count { it.active })),
                         com.saif.mosque.ui.components.StatItem(stringResource(R.string.total_users), Format.bn(mosques.sumOf { it.memberCount })),
-                        com.saif.mosque.ui.components.StatItem(stringResource(R.string.combined_balance), Format.money(mosques.sumOf { it.totalBalance }))
+                        com.saif.mosque.ui.components.StatItem(stringResource(R.string.combined_balance), Format.money(mosques.sumOf { Math.round(it.totalBalance * 100) } / 100.0))
                     ))
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
@@ -255,17 +268,28 @@ fun PlatformScreen(container: AppContainer, authVm: AuthViewModel, user: AppUser
         MosqueFormDialog(
             initial = target,
             isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            saving = saving,
+            saveError = saveError,
+            onDismiss = { editing = null; saveError = null },
             onSave = { mosque, adminName, adminEmail, adminPhone, adminPassword ->
-                if (target.id.isEmpty()) {
-                    vm.create(mosque, adminName, adminEmail, adminPhone, adminPassword)
-                } else {
-                    vm.update(mosque.copy(id = target.id, active = target.active,
-                        totalBalance = target.totalBalance, fundCount = target.fundCount,
-                        donorCount = target.donorCount, memberCount = target.memberCount,
-                        createdAt = target.createdAt))
+                if (!saving) {
+                    saving = true; saveError = null
+                    val done: (Msg?) -> Unit = { result ->
+                        saving = false
+                        if (result == null) editing = null else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                    if (target.id.isEmpty()) {
+                        vm.create(mosque, adminName, adminEmail, adminPhone, adminPassword, done)
+                    } else {
+                        vm.update(mosque.copy(id = target.id, active = target.active,
+                            totalBalance = target.totalBalance, fundCount = target.fundCount,
+                            donorCount = target.donorCount, memberCount = target.memberCount,
+                            createdAt = target.createdAt), done)
+                    }
                 }
-                editing = null
             }
         )
     }
@@ -337,6 +361,8 @@ private fun MosqueCard(mosque: Mosque, canEdit: Boolean, onEdit: () -> Unit, onT
 private fun MosqueFormDialog(
     initial: Mosque,
     isNew: Boolean,
+    saving: Boolean = false,
+    saveError: String? = null,
     onDismiss: () -> Unit,
     onSave: (Mosque, String, String, String, String) -> Unit
 ) {
@@ -353,54 +379,116 @@ private fun MosqueFormDialog(
     var adminEmail by remember { mutableStateOf("") }
     var adminPhone by remember { mutableStateOf("") }
     var adminPassword by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var attempted by remember { mutableStateOf(false) }
+    val tooLong = stringResource(R.string.invitation_field_too_long)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.new_mosque else R.string.edit_mosque)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LabeledField(stringResource(R.string.mosque_name), name, { name = it }, error = error)
-                LabeledField(stringResource(R.string.mosque_name_en), nameEn, { nameEn = it })
-                LabeledField(stringResource(R.string.address), address, { address = it })
-                LabeledField(stringResource(R.string.district), district, { district = it })
-                LabeledField(stringResource(R.string.upazila), upazila, { upazila = it })
-                LabeledField(stringResource(R.string.phone), phone, { phone = it }, keyboardType = KeyboardType.Phone)
-                LabeledField(stringResource(R.string.email), email, { email = it }, keyboardType = KeyboardType.Email)
-                LabeledField(stringResource(R.string.established_year), year, { year = it }, keyboardType = KeyboardType.Number)
-                LabeledField(stringResource(R.string.registration_no), regNo, { regNo = it })
+                LabeledField(
+                    stringResource(R.string.mosque_name), name, { name = it },
+                    error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.mosque_name_en), nameEn, { nameEn = it },
+                    error = if (attempted) tooLong.takeIf { nameEn.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.address), address, { address = it },
+                    error = if (attempted) tooLong.takeIf { address.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.district), district, { district = it },
+                    error = if (attempted) tooLong.takeIf { district.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.upazila), upazila, { upazila = it },
+                    error = if (attempted) tooLong.takeIf { upazila.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.phone), phone, { phone = it },
+                    error = if (attempted) Validators.bdPhone(phone) else null,
+                    keyboardType = KeyboardType.Phone, enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.email), email, { email = it },
+                    error = if (attempted && email.isNotBlank()) Validators.email(email) else null,
+                    keyboardType = KeyboardType.Email, enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.established_year), year, { year = it },
+                    error = if (attempted && year.isNotBlank()) Validators.year(year) else null,
+                    keyboardType = KeyboardType.Number, enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.registration_no), regNo, { regNo = it },
+                    error = if (attempted) tooLong.takeIf { regNo.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
                 if (isNew) {
                     SectionTitle(stringResource(R.string.admin_details))
-                    LabeledField(stringResource(R.string.admin_name), adminName, { adminName = it })
-                    LabeledField(stringResource(R.string.admin_email), adminEmail, { adminEmail = it }, keyboardType = KeyboardType.Email)
-                    LabeledField(stringResource(R.string.admin_phone), adminPhone, { adminPhone = it }, keyboardType = KeyboardType.Phone)
-                    com.saif.mosque.ui.components.PasswordField(stringResource(R.string.admin_password_optional), adminPassword, { adminPassword = it })
+                    LabeledField(
+                        stringResource(R.string.admin_name), adminName, { adminName = it },
+                        error = if (attempted) Validators.required(adminName) ?: tooLong.takeIf { adminName.trim().length > 1000 } else null,
+                        enabled = !saving
+                    )
+                    LabeledField(
+                        stringResource(R.string.admin_email), adminEmail, { adminEmail = it },
+                        error = if (attempted) Validators.email(adminEmail) ?: tooLong.takeIf { adminEmail.trim().length > 254 } else null,
+                        keyboardType = KeyboardType.Email, enabled = !saving
+                    )
+                    LabeledField(
+                        stringResource(R.string.admin_phone), adminPhone, { adminPhone = it },
+                        error = if (attempted) Validators.bdPhone(adminPhone) else null,
+                        keyboardType = KeyboardType.Phone, enabled = !saving
+                    )
+                    com.saif.mosque.ui.components.PasswordField(
+                        stringResource(R.string.admin_password_optional), adminPassword, { adminPassword = it },
+                        error = if (attempted && adminPassword.isNotBlank()) Validators.password(adminPassword) else null,
+                        enabled = !saving
+                    )
+                }
+                saveError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
         confirmButton = {
-            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
-                val nameErr = Validators.required(name)
+            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+                attempted = true
+                if (Validators.required(name) != null || Validators.bdPhone(phone) != null ||
+                    (email.isNotBlank() && Validators.email(email) != null) ||
+                    (year.isNotBlank() && Validators.year(year) != null) ||
+                    listOf(name, nameEn, address, district, upazila, phone, email, regNo).any { it.trim().length > 1000 }) {
+                    return@TextButton
+                }
                 if (isNew) {
-                    if (nameErr != null || Validators.required(adminName) != null ||
-                        Validators.email(adminEmail) != null ||
+                    if (Validators.required(adminName) != null || adminName.trim().length > 1000 ||
+                        Validators.email(adminEmail) != null || adminEmail.trim().length > 254 ||
+                        Validators.bdPhone(adminPhone) != null ||
                         (adminPassword.isNotBlank() && Validators.password(adminPassword) != null)) {
-                        error = "required"
                         return@TextButton
                     }
-                } else if (nameErr != null) { error = "required"; return@TextButton }
+                }
                 onSave(
                     initial.copy(
                         name = name.trim(), nameEn = nameEn.trim(), address = address.trim(),
                         district = district.trim(), upazila = upazila.trim(), phone = phone.trim(),
-                        email = email.trim(), establishedYear = year.toIntOrNull(),
+                        email = email.trim(), establishedYear = year.trim().toIntOrNull(),
                         registrationNo = regNo.trim()
                     ),
-                    adminName, adminEmail, adminPhone, adminPassword
+                    adminName.trim(), adminEmail.trim(), adminPhone.trim(), adminPassword
                 )
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }
 

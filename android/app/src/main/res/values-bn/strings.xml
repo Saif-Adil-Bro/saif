@@ -94,7 +94,7 @@
     <string name="role">ভূমিকা</string>
     <string name="designation">পদবি</string>
     <string name="cannot_delete_self">নিজের অ্যাকাউন্ট মুছে ফেলা যায় না</string>
-    <string name="cannot_deactivate_self">নিজের অ্যাকাউন্ট নিষ্ক্রিয় করা যায় না</string>
+    <string name="cannot_deactivate_self">নিজের অ্যাকাউন্ট নিষ্ক্রিয় বা ভূমিকা পরিবর্তন করা যায় না</string>
     <string name="delete_member_q">এই সদস্যকে সরিয়ে দেবেন?</string>
     <string name="transfers">স্থানান্তর</string>
     <string name="add_transfer">নতুন স্থানান্তর</string>
@@ -145,7 +145,7 @@
     <string name="credentials_title">প্রবেশের তথ্য</string>
     <string name="credentials_warning">এই তথ্য একবারই দেখানো হবে। নিরাপদে সংরক্ষণ করুন।</string>
     <string name="temp_password">অস্থায়ী পাসওয়ার্ড</string>
-    <string name="mosque_created">মসজিদ তৈরি হয়েছে</string>
+    <string name="mosque_created">৫টি প্রাথমিক তহবিলসহ মসজিদ তৈরি হয়েছে</string>
     <string name="role_superadmin">প্ল্যাটফর্ম অ্যাডমিন</string>
     <string name="role_admin">মসজিদ অ্যাডমিন</string>
     <string name="role_president">সভাপতি</string>

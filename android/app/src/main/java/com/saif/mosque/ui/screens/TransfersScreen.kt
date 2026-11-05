@@ -225,7 +225,8 @@ internal fun TransferFormDialog(
     var amount by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(Format.todayIso()) }
     var note by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var attempted by remember { mutableStateOf(false) }
+    val tooLong = stringResource(R.string.invitation_field_too_long)
 
     val options = funds.filter { it.active }.map { it.id to "${it.code} — ${it.name} (${Format.money(it.balance)})" }
 
@@ -234,12 +235,31 @@ internal fun TransferFormDialog(
         title = { Text(stringResource(R.string.add_transfer)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DropdownField(stringResource(R.string.from_account), options, fromId, { fromId = it }, enabled = !saving)
-                DropdownField(stringResource(R.string.to_account), options, toId, { toId = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                DropdownField(
+                    stringResource(R.string.from_account), options, fromId, { fromId = it },
+                    enabled = !saving,
+                    error = if (attempted && fromId.isBlank()) "required" else null
+                )
+                DropdownField(
+                    stringResource(R.string.to_account), options, toId, { toId = it },
+                    enabled = !saving,
+                    error = if (attempted) when {
+                        toId.isBlank() -> "required"
+                        fromId == toId -> "same"
+                        else -> null
+                    } else null
+                )
+                LabeledField(
+                    stringResource(R.string.amount), amount, { amount = it },
+                    error = if (attempted) Validators.amount(amount) else null,
+                    keyboardType = KeyboardType.Decimal, enabled = !saving
+                )
                 DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                LabeledField(
+                    stringResource(R.string.note), note, { note = it }, singleLine = false,
+                    error = if (attempted) tooLong.takeIf { note.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
                 saveError?.let { message ->
                     Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
@@ -248,8 +268,9 @@ internal fun TransferFormDialog(
         },
         confirmButton = {
             TextButton(enabled = !saving, onClick = {
-                if (fromId.isBlank() || toId.isBlank() || fromId == toId) { error = "same"; return@TextButton }
-                if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
+                attempted = true
+                if (fromId.isBlank() || toId.isBlank() || fromId == toId) return@TextButton
+                if (Validators.amount(amount) != null || note.trim().length > 1000) return@TextButton
                 onSave(Transfer(fromAccountId = fromId, toAccountId = toId,
                     amount = amount.toDouble(), date = date, note = note.trim()))
             }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }

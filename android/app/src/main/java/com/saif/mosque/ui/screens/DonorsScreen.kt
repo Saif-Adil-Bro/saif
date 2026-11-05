@@ -242,30 +242,43 @@ private fun DonorFormDialog(
     var phone by remember { mutableStateOf(initial.phone) }
     var address by remember { mutableStateOf(initial.address) }
     var active by remember { mutableStateOf(initial.active) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var attempted by remember { mutableStateOf(false) }
+    val tooLong = stringResource(R.string.invitation_field_too_long)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_donor else R.string.edit_donor)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LabeledField(stringResource(R.string.name), name, { name = it }, error = error)
-                LabeledField(stringResource(R.string.phone), phone, { phone = it },
-                    error = Validators.bdPhone(phone)?.let { "phone" }, keyboardType = KeyboardType.Phone)
-                LabeledField(stringResource(R.string.address), address, { address = it }, singleLine = false)
+                LabeledField(
+                    stringResource(R.string.name), name, { name = it },
+                    error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.phone), phone, { phone = it },
+                    error = if (attempted) Validators.bdPhone(phone) else null,
+                    keyboardType = KeyboardType.Phone, enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.address), address, { address = it }, singleLine = false,
+                    error = if (attempted) tooLong.takeIf { address.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
                 if (saveError) Text(stringResource(R.string.local_save_failed), color = MaterialTheme.colorScheme.error)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
                     val activeLabel = stringResource(R.string.active)
-                    Switch(checked = active, onCheckedChange = { active = it },
+                    Switch(checked = active, onCheckedChange = { active = it }, enabled = !saving,
                         modifier = Modifier.semantics { contentDescription = activeLabel })
                 }
             }
         },
         confirmButton = {
             TextButton(enabled = !saving, onClick = {
-                if (Validators.required(name) != null) { error = "required"; return@TextButton }
-                if (Validators.bdPhone(phone) != null) return@TextButton
+                attempted = true
+                if (Validators.required(name) != null || Validators.bdPhone(phone) != null) return@TextButton
+                if (listOf(name, phone, address).any { it.trim().length > 1000 }) return@TextButton
                 onSave(initial.copy(name = name.trim(), phone = phone.trim(),
                     address = address.trim(), active = active))
             }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }

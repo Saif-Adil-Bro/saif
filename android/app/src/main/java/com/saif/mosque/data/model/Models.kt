@@ -93,6 +93,7 @@ data class Expense(
     val note: String = "",
     val status: String = "approved",
     val approvedBy: String = "",
+    val createdBy: String = "",
     val createdAt: Long = 0L
 )
 
@@ -125,7 +126,8 @@ data class RecentTx(
     val type: String, // "contribution" | "expense" | "transfer"
     val title: String,
     val amount: Double,
-    val date: String
+    val date: String,
+    val createdAt: Long = 0L
 )
 
 /** Computed monthly report (spec: month-end income/expense report). */

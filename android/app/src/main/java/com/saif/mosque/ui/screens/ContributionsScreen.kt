@@ -271,7 +271,8 @@ internal fun ContributionFormDialog(
     var date by remember { mutableStateOf(initial.date.ifBlank { Format.todayIso() }) }
     var receipt by remember { mutableStateOf(initial.receiptNo) }
     var note by remember { mutableStateOf(initial.note) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var attempted by remember { mutableStateOf(false) }
+    val tooLong = stringResource(R.string.invitation_field_too_long)
 
     val donorOptions = donors.filter { it.active || it.id == initial.donorId }.map { it.id to it.name } + ("" to stringResource(R.string.donor_name_free))
 
@@ -284,22 +285,43 @@ internal fun ContributionFormDialog(
                     label = stringResource(R.string.donor),
                     options = donorOptions,
                     selected = donorId,
-                    onSelect = { donorId = it }, enabled = !saving
+                    onSelect = {
+                        if (donorId.isNotBlank() && it.isBlank()) donorName = ""
+                        donorId = it
+                    },
+                    enabled = !saving
                 )
                 if (donorId.isBlank()) {
-                    LabeledField(stringResource(R.string.donor_name_free), donorName, { donorName = it }, error = error, enabled = !saving)
+                    LabeledField(
+                        stringResource(R.string.donor_name_free), donorName, { donorName = it },
+                        error = if (attempted) Validators.required(donorName) ?: tooLong.takeIf { donorName.trim().length > 1000 } else null,
+                        enabled = !saving
+                    )
                 }
                 DropdownField(
                     label = stringResource(R.string.account),
                     options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
-                    onSelect = { accountId = it }, enabled = !saving
+                    onSelect = { accountId = it },
+                    enabled = !saving,
+                    error = if (attempted && accountId.isBlank()) "required" else null
                 )
-                LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                LabeledField(
+                    stringResource(R.string.amount), amount, { amount = it },
+                    error = if (attempted) Validators.amount(amount) else null,
+                    keyboardType = KeyboardType.Decimal, enabled = !saving
+                )
                 DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it }, enabled = !saving)
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                LabeledField(
+                    stringResource(R.string.receipt_no), receipt, { receipt = it },
+                    error = if (attempted) tooLong.takeIf { receipt.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
+                LabeledField(
+                    stringResource(R.string.note), note, { note = it }, singleLine = false,
+                    error = if (attempted) tooLong.takeIf { note.trim().length > 1000 } else null,
+                    enabled = !saving
+                )
                 saveError?.let { message ->
                     Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
@@ -308,9 +330,11 @@ internal fun ContributionFormDialog(
         },
         confirmButton = {
             TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
-                if (donorId.isBlank() && Validators.required(donorName) != null) { error = "required"; return@TextButton }
-                if (accountId.isBlank()) { error = "required"; return@TextButton }
-                if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
+                attempted = true
+                if (donorId.isBlank() && (Validators.required(donorName) != null || donorName.trim().length > 1000)) return@TextButton
+                if (accountId.isBlank()) return@TextButton
+                if (Validators.amount(amount) != null) return@TextButton
+                if (receipt.trim().length > 1000 || note.trim().length > 1000) return@TextButton
                 onSave(initial.copy(
                     donorId = donorId,
                     donorName = if (donorId.isBlank()) donorName.trim()

@@ -117,9 +117,12 @@ class AuthRepository(
             Result.success(AppUser(id = result["uid"] as String, name = name, email = email,
                 phone = phone, role = role, mosqueId = currentUser.mosqueId, designation = designation))
         } catch (ex: kotlinx.coroutines.CancellationException) { throw ex } catch (ex: Exception) {
-            val resId = if (ex is com.google.firebase.functions.FirebaseFunctionsException &&
-                ex.code == com.google.firebase.functions.FirebaseFunctionsException.Code.NOT_FOUND)
-                R.string.member_service_missing else R.string.error_generic
+            val resId = when ((ex as? com.google.firebase.functions.FirebaseFunctionsException)?.code) {
+                com.google.firebase.functions.FirebaseFunctionsException.Code.NOT_FOUND -> R.string.member_service_missing
+                com.google.firebase.functions.FirebaseFunctionsException.Code.ALREADY_EXISTS -> R.string.email_in_use
+                com.google.firebase.functions.FirebaseFunctionsException.Code.PERMISSION_DENIED -> R.string.permission_denied
+                else -> R.string.error_generic
+            }
             Result.failure(AuthException(resId))
         }
     }

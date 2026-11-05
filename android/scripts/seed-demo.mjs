@@ -28,7 +28,7 @@ const FUNDS = [
   },
   {
     "code": "CHD",
-    "name": "চানদা",
+    "name": "চাঁদা",
     "nameEn": "Subscription"
   },
   {
@@ -112,7 +112,7 @@ async function main() {
     name: APP_NAME_BN + ' (Demo)', nameEn: 'Demo Mosque',
     address: 'Dhaka, Bangladesh', district: 'Dhaka', upazila: '',
     phone: '', email: '', establishedYear: 2020, registrationNo: 'DEMO-0001',
-    active: true, totalBalance: 0, fundCount: FUNDS.length, donorCount: 0, memberCount: 2,
+    active: true, totalBalance: 0, fundCount: FUNDS.length, donorCount: 0, memberCount: 1,
     createdAt: now,
   }, { merge: true });
   for (const f of FUNDS) {

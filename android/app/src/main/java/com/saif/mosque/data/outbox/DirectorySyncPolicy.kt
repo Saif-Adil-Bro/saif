@@ -3,9 +3,9 @@ package com.saif.mosque.data.outbox
 /** Decisions are rechecked on the server; a cached role alone cannot authorize a sync. */
 object DirectorySyncPolicy {
     fun permitted(kind: String, role: String?, active: Boolean, profileMosque: String?, mosqueId: String): Boolean =
-        active && profileMosque == mosqueId && when (kind) {
-            "funds" -> role in setOf("ADMIN", "SECRETARY", "TREASURER")
-            "donors" -> role in setOf("ADMIN", "SECRETARY", "TREASURER", "CASHIER")
+        active && (role == "SUPERADMIN" || profileMosque == mosqueId) && when (kind) {
+            "funds" -> role in setOf("SUPERADMIN", "ADMIN", "SECRETARY", "TREASURER")
+            "donors" -> role in setOf("SUPERADMIN", "ADMIN", "SECRETARY", "TREASURER", "CASHIER")
             else -> false
         }
 
@@ -14,7 +14,7 @@ object DirectorySyncPolicy {
                        profileMosque: String?, mosqueId: String): String? = when {
         !exists -> "PROFILE_MISSING"
         !active -> "PROFILE_INACTIVE"
-        profileMosque != mosqueId -> "PROFILE_TENANT"
+        role != "SUPERADMIN" && profileMosque != mosqueId -> "PROFILE_TENANT"
         !permitted(kind, role, active, profileMosque, mosqueId) -> "PROFILE_ROLE"
         else -> null
     }

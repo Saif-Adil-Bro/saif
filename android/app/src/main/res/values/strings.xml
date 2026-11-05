@@ -109,8 +109,8 @@
     <string name="edit_member">Edit member</string>
     <string name="role">Role</string>
     <string name="designation">Designation</string>
-    <string name="cannot_delete_self">You cannot delete your own account (400)</string>
-    <string name="cannot_deactivate_self">You cannot deactivate your own account (400)</string>
+    <string name="cannot_delete_self">You cannot delete your own account</string>
+    <string name="cannot_deactivate_self">You cannot deactivate or change the role of your own account</string>
     <string name="delete_member_q">Remove this member?</string>
 
     <!-- Transfers -->

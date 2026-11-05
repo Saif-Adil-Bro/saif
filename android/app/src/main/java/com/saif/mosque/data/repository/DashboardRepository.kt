@@ -68,20 +68,20 @@ class DashboardRepository(
 
             val recent = (
                 recentContributions.map {
-                    RecentTx(it.id, "contribution", it.donorName.ifBlank { "—" }, it.amount, it.date)
+                    RecentTx(it.id, "contribution", it.donorName.ifBlank { "—" }, it.amount, it.date, it.createdAt)
                 } + recentExpenses.map {
-                    RecentTx(it.id, "expense", it.title, -it.amount, it.date)
+                    RecentTx(it.id, "expense", it.title, -it.amount, it.date, it.createdAt)
                 } + transfers.map {
-                    RecentTx(it.id, "transfer", "Transfer", -it.amount, it.date)
+                    RecentTx(it.id, "transfer", "Transfer", -it.amount, it.date, it.createdAt)
                 }
-                ).sortedByDescending { it.date }.take(10)
+                ).sortedWith(compareByDescending<RecentTx> { it.date }.thenByDescending { it.createdAt }).take(10)
 
             DashboardData(
-                totalBalance = mosque?.totalBalance ?: funds.sumOf { it.balance },
-                monthlyIncome = contributions.sumOf { it.amount },
-                monthlyExpense = expenses.sumOf { it.amount },
+                totalBalance = mosque?.totalBalance ?: (funds.sumOf { Math.round(it.balance * 100) } / 100.0),
+                monthlyIncome = contributions.sumOf { Math.round(it.amount * 100) } / 100.0,
+                monthlyExpense = expenses.sumOf { Math.round(it.amount * 100) } / 100.0,
                 activeDonors = donors.count { it.active },
-                fundCount = funds.size,
+                fundCount = funds.count { it.active },
                 fundBalances = funds.sortedByDescending { it.balance }.map { it to it.balance },
                 recent = recent
             )

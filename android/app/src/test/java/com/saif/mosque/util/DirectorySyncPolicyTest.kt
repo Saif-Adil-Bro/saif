@@ -9,6 +9,8 @@ import org.junit.Test
 
 class DirectorySyncPolicyTest {
     @Test fun rolesMustStillBeActiveAndInTheOriginalTenant() {
+        assertTrue(DirectorySyncPolicy.permitted("funds", "SUPERADMIN", true, null, "a"))
+        assertTrue(DirectorySyncPolicy.permitted("donors", "SUPERADMIN", true, null, "a"))
         assertTrue(DirectorySyncPolicy.permitted("funds", "ADMIN", true, "a", "a"))
         assertTrue(DirectorySyncPolicy.permitted("donors", "CASHIER", true, "a", "a"))
         assertFalse(DirectorySyncPolicy.permitted("funds", "CASHIER", true, "a", "a"))
