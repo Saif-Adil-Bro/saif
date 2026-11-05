@@ -39,6 +39,10 @@ fun PendingLedger(drafts: List<PrototypeQueuedLedger>, online: Boolean,
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.pending_explanation), style = MaterialTheme.typography.bodySmall)
+                if (drafts.first().state == "BLOCKED") {
+                    Text(stringResource(R.string.ledger_queue_blocked), color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall)
+                }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(drafts, key = { it.draft.id }) { queued ->
                         val d = queued.draft

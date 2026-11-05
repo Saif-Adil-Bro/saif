@@ -45,7 +45,7 @@ class PrototypeLedgerOutbox internal constructor(context: Context, name: String 
         writableDatabase.insertOrThrow("entries", null, fields)
         changed.update { it + 1 }
     }
-    fun observe(uid: String, mosqueId: String, kind: String): Flow<List<PrototypeQueuedLedger>> =
+    fun observe(uid: String, mosqueId: String, kind: String? = null): Flow<List<PrototypeQueuedLedger>> =
         changed.map { list(uid, mosqueId, kind) }
 
     suspend fun list(uid: String, mosqueId: String, kind: String? = null): List<PrototypeQueuedLedger> = withContext(Dispatchers.IO) {

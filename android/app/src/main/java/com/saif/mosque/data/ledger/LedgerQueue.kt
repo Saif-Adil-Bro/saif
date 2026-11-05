@@ -19,6 +19,9 @@ class LedgerQueue(private val context: Context, private val auth: FirebaseAuth) 
         }
     }
     suspend fun discard(draft: PrototypeLedgerDraft) {
-        if (auth.currentUser?.uid == draft.uid) store.discardBlocked(draft.id, draft.uid, draft.mosqueId)
+        if (auth.currentUser?.uid == draft.uid && store.discardBlocked(draft.id, draft.uid, draft.mosqueId)) {
+            try { PrototypeLedgerSync.schedulePending(context, draft.uid, draft.mosqueId) }
+            catch (e: CancellationException) { throw e } catch (_: Exception) { /* startup/periodic recovery */ }
+        }
     }
 }

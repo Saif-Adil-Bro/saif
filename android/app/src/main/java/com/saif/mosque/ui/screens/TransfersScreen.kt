@@ -88,7 +88,7 @@ class TransfersViewModel(
 
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
-    val pending = queue.store.observe(user.id, mosqueId, "transfers")
+    val pending = queue.store.observe(user.id, mosqueId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     fun retry(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
         try { queue.retry(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }

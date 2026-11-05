@@ -27,12 +27,13 @@ object PrototypeLedgerSync {
             .setInputData(workDataOf("id" to draft.id, "uid" to draft.uid, "mosqueId" to draft.mosqueId))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        // Serialize one tenant/account's queue in local insertion order. Separate
-        // users or mosques can sync independently; retries keep their chain position.
+        // Append a wake-up behind any current worker. KEEP can lose a wake-up if
+        // insertion races the worker's final empty read; periodic recovery is a fallback.
+        // The unique chain still serializes a tenant/account's local insertion order.
         val scope = java.security.MessageDigest.getInstance("SHA-256")
             .digest((draft.uid + "\u0000" + draft.mosqueId).toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
-        WorkManager.getInstance(context).enqueueUniqueWork("ledger-scope-$scope", ExistingWorkPolicy.KEEP, request)
+        WorkManager.getInstance(context).enqueueUniqueWork("ledger-scope-$scope", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
         scheduleRecovery(context)
     }
     fun scheduleRecovery(context: Context) {
@@ -57,8 +58,8 @@ object PrototypeLedgerSync {
         schedulePending(context, uid, mosqueId)
     }
     suspend fun schedulePending(context: Context, uid: String, mosqueId: String) {
-        PrototypeLedgerOutbox.get(context).list(uid, mosqueId).firstOrNull { it.state == "PENDING" }
-            ?.let { schedule(context, it.draft) }
+        PrototypeLedgerOutbox.get(context).list(uid, mosqueId).firstOrNull()
+            ?.takeIf { it.state == "PENDING" }?.let { schedule(context, it.draft) }
         scheduleRecovery(context)
     }
 }
@@ -85,9 +86,11 @@ class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : Corout
         // Drain a single tenant in SQLite insertion order. The unique scope work
         // prevents independent requests from spending before earlier local income.
         while (container.auth.currentUser?.uid == uid) {
-            val row = try { store.list(uid, mosqueId).firstOrNull { it.state == "PENDING" } }
+            val row = try { store.list(uid, mosqueId).firstOrNull() }
                 catch (e: CancellationException) { throw e } catch (_: Exception) { return Result.retry() }
-            if (row == null) return Result.success()
+            // An earlier blocked operation is unresolved. Never send later drafts
+            // ahead of it: they may depend on its money or correction.
+            if (row == null || row.state != "PENDING") return Result.success()
             val result = syncRow(store, row, uid, mosqueId)
             if (result != Result.success()) return result
         }

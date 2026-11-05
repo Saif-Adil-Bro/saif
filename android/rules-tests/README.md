@@ -30,7 +30,9 @@ tenant isolation, overdraft and concurrent spending using the emulator.
 The `PrototypeLedgerWriter`, SQLite outbox and WorkManager worker are connected
 to new-entry screens and tested against v2 rules in a separately started emulator.
 The queue is scoped to the signed-in account and mosque, excludes pending values
-from confirmed totals and uses insertion order within a tenant/account. Recovery
+from confirmed totals and uses insertion order within a tenant/account. A blocked
+head stops subsequent operations until retry or discard; pending entries from all
+ledger types are visible together. Recovery
 is scheduled on startup and periodically. A process may still die before scheduling;
 startup/periodic recovery covers that gap. Unsynced drafts are excluded from backup
 and are lost on uninstall or data clear. Edits, deletes, account provisioning and

@@ -224,6 +224,7 @@
     <string name="discard_local_warning">এই ডিভাইসের খসড়াটি বাদ দেবেন? এটি আগে পাঠানো হয়ে থাকলে পরে অনলাইনে দেখা যেতে পারে। অনলাইন পরিবর্তন এতে ফিরবে না।</string>
     <string name="member_service_missing">এই প্রজেক্টে সদস্য তৈরির সেবা পাওয়া যাচ্ছে না।</string>
     <string name="member_check_before_retry">আবার চেষ্টা করার আগে অনলাইনে অ্যাকাউন্ট তৈরি হয়েছে কি না দেখুন।</string>
+    <string name="ledger_queue_blocked">পরের হিসাব সিঙ্ক করতে প্রথমে আটকে থাকা তথ্যটি সমাধান করুন।</string>
     <string name="ledger_wait_migration">এই মসজিদে নতুন হিসাবের সেটআপ এখনও প্রস্তুত নয়। নিশ্চিত হলে খসড়াটি আবার সিঙ্কের চেষ্টা করবে।</string>
     <string name="ledger_migration_required">হিসাবের সেটআপ সম্পূর্ণ নয়। প্রশাসককে ব্যালেন্স যাচাই ও স্থানান্তর করতে বলুন।</string>
 </resources>

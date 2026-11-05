@@ -89,6 +89,18 @@ class PrototypeLedgerIntegrationTest {
         withTimeout(45_000) { while (store.list(base.uid, base.mosqueId).isNotEmpty()) delay(250) }
         assertEquals(600L, parent.collection("funds").document("main").get(Source.SERVER).await().getLong("balancePoisha"))
         assertEquals(1600L, parent.get(Source.SERVER).await().getLong("totalBalancePoisha"))
+        // Later entries cannot pass a blocked earlier draft, even across types.
+        val firstBlocked = base.copy(id="blocked-first", sourceFundId="legacy", amountPoisha=100)
+        val later = base.copy(id="blocked-later", kind="expenses", donorId="", donorName="", title="Later", amountPoisha=100)
+        store.enqueue(firstBlocked); store.enqueue(later)
+        assertEquals(ListenableWorker.Result.success(), sync(later))
+        assertEquals(listOf("BLOCKED", "PENDING"), store.list(base.uid, base.mosqueId).map { it.state })
+        assertFalse(parent.collection("expenses").document(later.id).get(Source.SERVER).await().exists())
+        assertEquals(600L, parent.collection("funds").document("main").get(Source.SERVER).await().getLong("balancePoisha"))
+        // Removing the blocked head schedules the remaining queue automatically.
+        LedgerQueue(app, auth).discard(firstBlocked)
+        withTimeout(45_000) { while (store.list(base.uid, base.mosqueId).isNotEmpty()) delay(250) }
+        assertEquals(500L, parent.collection("funds").document("main").get(Source.SERVER).await().getLong("balancePoisha"))
         assertFalse(parent.collection("contributions").document("legacy").get(Source.SERVER).await().exists())
         auth.signInWithEmailAndPassword("other-ledger@example.test", "test-only-password").await()
         assertTrue(runCatching { writer.commit(base.copy(id="wrong-user")) }.isFailure)
