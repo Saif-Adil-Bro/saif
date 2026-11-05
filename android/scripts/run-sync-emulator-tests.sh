@@ -17,4 +17,4 @@ npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config
 # rules are never overwritten; the prototype test must not run in the first suite.
 node -e 'const fs=require("fs"),path=require("path"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:path.resolve("rules-tests/ledger-prototype.rules")},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
 npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config "$CONFIG" --only auth,firestore \
-  'node scripts/seed-ledger-prototype-emulator.cjs && gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.saif.mosque.data.ledger.PrototypeLedgerIntegrationTest'
+  'node scripts/seed-ledger-prototype-emulator.cjs && bash -o pipefail -c "gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.saif.mosque.data.ledger.PrototypeLedgerIntegrationTest 2>&1 | tee /tmp/ledger-prototype-test.log"'

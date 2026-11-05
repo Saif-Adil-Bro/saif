@@ -102,14 +102,18 @@ class ContributionsViewModel(
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
 
-    fun add(c: Contribution) = mutate { repo.addContribution(mosqueId, c, user.id) }
-    fun update(old: Contribution, new: Contribution) = mutate { repo.updateContribution(mosqueId, old, new, user.id) }
-    fun delete(c: Contribution) = mutate { repo.deleteContribution(mosqueId, c) }
+    fun add(c: Contribution, done: (Msg?) -> Unit) = mutate(done) { repo.addContribution(mosqueId, c, user.id) }
+    fun update(old: Contribution, new: Contribution, done: (Msg?) -> Unit) = mutate(done) { repo.updateContribution(mosqueId, old, new, user.id) }
+    fun delete(c: Contribution) = mutate(null) { repo.deleteContribution(mosqueId, c) }
 
-    private fun mutate(block: suspend () -> Unit) {
+    private fun mutate(done: ((Msg?) -> Unit)?, block: suspend () -> Unit) {
         viewModelScope.launch {
-            try { block(); _messages.emit(Msg.Res(R.string.saved_ok)) }
-            catch (e: Exception) { _messages.emit(Msg.Text(e.message ?: "error")) }
+            try { block(); done?.invoke(null); _messages.emit(Msg.Res(R.string.saved_ok)) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                val error = Msg.Text(e.message ?: "error")
+                if (done != null) done(error) else _messages.emit(error)
+            }
         }
     }
 }
@@ -128,6 +132,8 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     var fundFilter by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Contribution?>(null) }
     var deleting by remember { mutableStateOf<Contribution?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -203,10 +209,20 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
             funds = (state as? UiState.Success)?.data?.second ?: emptyList(),
             donors = donors,
             isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            saving = saving, saveError = saveError,
+            onDismiss = { editing = null; saveError = null },
             onSave = { c ->
-                if (target.id.isEmpty()) vm.add(c) else vm.update(target, c.copy(id = target.id))
-                editing = null
+                if (!saving) {
+                    saving = true; saveError = null
+                    val done: (Msg?) -> Unit = { result ->
+                        saving = false
+                        if (result == null) editing = null else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                    if (target.id.isEmpty()) vm.add(c, done) else vm.update(target, c.copy(id = target.id), done)
+                }
             }
         )
     }
@@ -217,11 +233,13 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
 }
 
 @Composable
-private fun ContributionFormDialog(
+internal fun ContributionFormDialog(
     initial: Contribution,
     funds: List<Fund>,
     donors: List<Donor>,
     isNew: Boolean,
+    saving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: (Contribution) -> Unit
 ) {
@@ -237,7 +255,7 @@ private fun ContributionFormDialog(
     val donorOptions = donors.filter { it.active || it.id == initial.donorId }.map { it.id to it.name } + ("" to stringResource(R.string.donor_name_free))
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_contribution else R.string.edit_contribution)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -245,26 +263,30 @@ private fun ContributionFormDialog(
                     label = stringResource(R.string.donor),
                     options = donorOptions,
                     selected = donorId,
-                    onSelect = { donorId = it }
+                    onSelect = { donorId = it }, enabled = !saving
                 )
                 if (donorId.isBlank()) {
-                    LabeledField(stringResource(R.string.donor_name_free), donorName, { donorName = it }, error = error)
+                    LabeledField(stringResource(R.string.donor_name_free), donorName, { donorName = it }, error = error, enabled = !saving)
                 }
                 DropdownField(
                     label = stringResource(R.string.account),
                     options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
-                    onSelect = { accountId = it }
+                    onSelect = { accountId = it }, enabled = !saving
                 )
                 LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal)
-                DatePickerField(stringResource(R.string.date), date, { date = it })
-                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it })
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false)
+                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                saveError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 if (donorId.isBlank() && Validators.required(donorName) != null) { error = "required"; return@TextButton }
                 if (accountId.isBlank()) { error = "required"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
@@ -278,8 +300,8 @@ private fun ContributionFormDialog(
                     receiptNo = receipt.trim(),
                     note = note.trim()
                 ))
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

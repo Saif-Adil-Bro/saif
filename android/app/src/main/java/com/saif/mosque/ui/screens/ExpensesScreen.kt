@@ -95,16 +95,18 @@ class ExpensesViewModel(
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
 
-    fun add(e: Expense) = mutate { repo.addExpense(mosqueId, e, user.id) }
-    fun update(old: Expense, e: Expense) = mutate { repo.updateExpense(mosqueId, old, e, user.id) }
-    fun delete(e: Expense) = mutate { repo.deleteExpense(mosqueId, e) }
+    fun add(e: Expense, done: (Msg?) -> Unit) = mutate(done) { repo.addExpense(mosqueId, e, user.id) }
+    fun update(old: Expense, e: Expense, done: (Msg?) -> Unit) = mutate(done) { repo.updateExpense(mosqueId, old, e, user.id) }
+    fun delete(e: Expense) = mutate(null) { repo.deleteExpense(mosqueId, e) }
 
-    private fun mutate(block: suspend () -> Unit) {
+    private fun mutate(done: ((Msg?) -> Unit)?, block: suspend () -> Unit) {
         viewModelScope.launch {
-            try { block(); _messages.emit(Msg.Res(R.string.saved_ok)) }
+            try { block(); done?.invoke(null); _messages.emit(Msg.Res(R.string.saved_ok)) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) {
-                _messages.emit(if (e is InsufficientBalanceException) Msg.Res(R.string.insufficient_balance)
-                    else Msg.Text(e.message ?: "error"))
+                val error = if (e is InsufficientBalanceException) Msg.Res(R.string.insufficient_balance)
+                    else Msg.Text(e.message ?: "error")
+                if (done != null) done(error) else _messages.emit(error)
             }
         }
     }
@@ -123,6 +125,8 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
     var fundFilter by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Expense?>(null) }
     var deleting by remember { mutableStateOf<Expense?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -197,10 +201,20 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
             initial = target,
             funds = (state as? UiState.Success)?.data?.second ?: emptyList(),
             isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            saving = saving, saveError = saveError,
+            onDismiss = { editing = null; saveError = null },
             onSave = { e ->
-                if (target.id.isEmpty()) vm.add(e) else vm.update(target, e.copy(id = target.id))
-                editing = null
+                if (!saving) {
+                    saving = true; saveError = null
+                    val done: (Msg?) -> Unit = { result ->
+                        saving = false
+                        if (result == null) editing = null else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                    if (target.id.isEmpty()) vm.add(e, done) else vm.update(target, e.copy(id = target.id), done)
+                }
             }
         )
     }
@@ -211,10 +225,12 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
 }
 
 @Composable
-private fun ExpenseFormDialog(
+internal fun ExpenseFormDialog(
     initial: Expense,
     funds: List<Fund>,
     isNew: Boolean,
+    saving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: (Expense) -> Unit
 ) {
@@ -229,28 +245,32 @@ private fun ExpenseFormDialog(
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_expense else R.string.edit_expense)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LabeledField(stringResource(R.string.expense_title), title, { title = it }, error = error)
-                LabeledField(stringResource(R.string.category), category, { category = it })
+                LabeledField(stringResource(R.string.expense_title), title, { title = it }, error = error, enabled = !saving)
+                LabeledField(stringResource(R.string.category), category, { category = it }, enabled = !saving)
                 DropdownField(
                     label = stringResource(R.string.account),
                     options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
-                    onSelect = { accountId = it }
+                    onSelect = { accountId = it }, enabled = !saving
                 )
                 LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal)
-                DatePickerField(stringResource(R.string.date), date, { date = it })
-                LabeledField(stringResource(R.string.paid_to), paidTo, { paidTo = it })
-                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it })
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false)
+                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.paid_to), paidTo, { paidTo = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                saveError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 if (Validators.required(title) != null) { error = "required"; return@TextButton }
                 if (accountId.isBlank()) { error = "required"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
@@ -259,8 +279,8 @@ private fun ExpenseFormDialog(
                     amount = amount.toDouble(), date = date, paidTo = paidTo.trim(),
                     receiptNo = receipt.trim(), note = note.trim()
                 ))
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

@@ -212,7 +212,8 @@ fun LabeledField(
     keyboardType: KeyboardType = KeyboardType.Text,
     singleLine: Boolean = true,
     readOnly: Boolean = false,
-    trailingIcon: (@Composable () -> Unit)? = null
+    trailingIcon: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true
 ) {
     val message = when (error) {
         "required", "required_field" -> stringResource(R.string.required_field)
@@ -233,6 +234,7 @@ fun LabeledField(
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         singleLine = singleLine,
         readOnly = readOnly,
+        enabled = enabled,
         trailingIcon = trailingIcon
     )
 }
@@ -276,7 +278,8 @@ fun DatePickerField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     var show by remember { mutableStateOf(false) }
     val pickerState = rememberDatePickerState(
@@ -286,9 +289,10 @@ fun DatePickerField(
         value = value,
         onValueChange = {},
         readOnly = true,
+        enabled = enabled,
         label = { Text(label) },
         modifier = modifier.fillMaxWidth(),
-        trailingIcon = { IconButton(onClick = { show = true }) {
+        trailingIcon = { IconButton(enabled = enabled, onClick = { show = true }) {
             Icon(Icons.Filled.CalendarMonth, contentDescription = stringResource(R.string.date))
         } }
     )

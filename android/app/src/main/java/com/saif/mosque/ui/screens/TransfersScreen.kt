@@ -88,13 +88,15 @@ class TransfersViewModel(
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
 
-    fun add(t: Transfer) {
+    fun add(t: Transfer, done: (Msg?) -> Unit) {
         viewModelScope.launch {
             try {
                 repo.addTransfer(mosqueId, t, user.id)
+                done(null)
                 _messages.emit(Msg.Res(R.string.saved_ok))
-            } catch (e: Exception) {
-                _messages.emit(when (e) {
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                done(when (e) {
                     is SameAccountException -> Msg.Res(R.string.same_account_error)
                     is InsufficientBalanceException -> Msg.Res(R.string.insufficient_balance)
                     else -> Msg.Text(e.message ?: "error")
@@ -122,6 +124,8 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
 
     var editing by remember { mutableStateOf<Transfer?>(null) }
     var deleting by remember { mutableStateOf<Transfer?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -167,8 +171,20 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
     editing?.let { target ->
         TransferFormDialog(
             funds = (state as? UiState.Success)?.data?.second ?: emptyList(),
-            onDismiss = { editing = null },
-            onSave = { t -> vm.add(t); editing = null }
+            saving = saving, saveError = saveError,
+            onDismiss = { editing = null; saveError = null },
+            onSave = { t ->
+                if (!saving) {
+                    saving = true; saveError = null
+                    vm.add(t) { result ->
+                        saving = false
+                        if (result == null) editing = null else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                }
+            }
         )
     }
     deleting?.let { t ->
@@ -178,8 +194,10 @@ fun TransfersScreen(container: AppContainer, user: AppUser) {
 }
 
 @Composable
-private fun TransferFormDialog(
+internal fun TransferFormDialog(
     funds: List<Fund>,
+    saving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: (Transfer) -> Unit
 ) {
@@ -193,26 +211,30 @@ private fun TransferFormDialog(
     val options = funds.filter { it.active }.map { it.id to "${it.code} — ${it.name} (${Format.money(it.balance)})" }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(R.string.add_transfer)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DropdownField(stringResource(R.string.from_account), options, fromId, { fromId = it })
-                DropdownField(stringResource(R.string.to_account), options, toId, { toId = it })
+                DropdownField(stringResource(R.string.from_account), options, fromId, { fromId = it }, enabled = !saving)
+                DropdownField(stringResource(R.string.to_account), options, toId, { toId = it }, enabled = !saving)
                 LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal)
-                DatePickerField(stringResource(R.string.date), date, { date = it })
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false)
+                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                saveError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 if (fromId.isBlank() || toId.isBlank() || fromId == toId) { error = "same"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
                 onSave(Transfer(fromAccountId = fromId, toAccountId = toId,
                     amount = amount.toDouble(), date = date, note = note.trim()))
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

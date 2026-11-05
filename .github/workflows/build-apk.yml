@@ -182,6 +182,28 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: bash android/scripts/run-sync-emulator-tests.sh
 
+      - name: Report emulator test failures
+        if: failure()
+        run: |
+          python3 - <<'PYCODE'
+          import glob, xml.etree.ElementTree as ET
+          paths = glob.glob('android/app/build/outputs/androidTest-results/**/*.xml', recursive=True)
+          for path in paths:
+              try:
+                  root = ET.parse(path).getroot()
+                  for case in root.iter('testcase'):
+                      for failure in case.findall('failure') + case.findall('error'):
+                          text = (case.attrib.get('classname', '') + '.' + case.attrib.get('name', '') + ': ' + (failure.text or failure.attrib.get('message', '')))[:12000]
+                          print('::error::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              except (OSError, ET.ParseError):
+                  pass
+          from pathlib import Path
+          log = Path('/tmp/ledger-prototype-test.log')
+          if log.exists():
+              tail = log.read_text(errors='replace')[-9000:]
+              print('::error::Ledger prototype test log tail: ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PYCODE
+
   # Optional: signed release APK. Requires 3 more secrets (see README):
   #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_PASSWORD
   # build-release-apk:
