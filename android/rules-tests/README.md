@@ -119,7 +119,9 @@ passwords, check the issuer and tenant on the server, and retry a stable ID afte
 uncertain acknowledgement. A READY state records a past server confirmation,
 not current validity: before sharing, the client must re-read the status online,
 display the expiry, and treat expiration/device-clock skew conservatively. A
-server-confirmed pending status cannot by itself prove it has not expired. Startup
+server-confirmed pending status cannot by itself prove it has not expired. A
+`WRITE_DENIED` result is intentionally non-diagnostic: expiry, permission changes
+or other rules can cause it. Startup
 recovery still needs integration and real-device verification, and the outbox
 is excluded from backup; uninstall or data clear deletes its local drafts. This is not wired into
 the app UI, a durable queue or deployed rules.

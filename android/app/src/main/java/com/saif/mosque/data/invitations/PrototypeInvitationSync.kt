@@ -121,7 +121,7 @@ class PrototypeInvitationWorker(context: Context, params: WorkerParameters) : Co
             return try {
                 store.transition(id, uid, mosqueId, "PENDING", "BLOCKED", when {
                     e is InvitationConflict -> "CONFLICT"
-                    e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED -> "PERMISSION"
+                    e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED -> "WRITE_DENIED"
                     else -> "UNKNOWN"
                 })
                 Result.success()
