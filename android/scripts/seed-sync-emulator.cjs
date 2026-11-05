@@ -13,13 +13,15 @@ const {getAuth} = fromFunctions('firebase-admin/auth');
 initializeApp({projectId: process.env.GCLOUD_PROJECT});
 async function main() {
   const auth = getAuth(), db = getFirestore();
-  for (const [uid, email] of [['outbox-a','a@example.test'], ['outbox-b','b@example.test'], ['outbox-inactive','inactive@example.test']]) {
+  for (const [uid, email] of [['outbox-a','a@example.test'], ['outbox-b','b@example.test'], ['outbox-inactive','inactive@example.test'], ['outbox-badcounter','badcounter@example.test']]) {
     await auth.createUser({uid, email, password: 'test-only-password'});
   }
   const batch = db.batch();
   for (const id of ['sync-test-mosque','sync-other-mosque']) {
     batch.set(db.doc(`mosques/${id}`), {active: true, fundCount: 0, donorCount: 0, memberCount: 1, totalBalance: 0});
   }
+  batch.set(db.doc('mosques/sync-badcounter'), {active: true, donorCount: 0, memberCount: 1, totalBalance: 0});
+  batch.set(db.doc('users/outbox-badcounter'), {active: true, role: 'ADMIN', mosqueId: 'sync-badcounter'});
   batch.set(db.doc('users/outbox-a'), {active: true, role: 'ADMIN', mosqueId: 'sync-test-mosque'});
   batch.set(db.doc('users/outbox-b'), {active: true, role: 'ADMIN', mosqueId: 'sync-other-mosque'});
   batch.set(db.doc('users/outbox-inactive'), {active: false, role: 'ADMIN', mosqueId: 'sync-test-mosque'});

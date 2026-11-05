@@ -62,10 +62,17 @@ fun PendingDirectory(drafts: List<DirectoryDraft>, online: Boolean, onRetry: (Di
                                 if (draft.state == "BLOCKED") {
                                     Text(stringResource(when (draft.failure) {
                                         "PERMISSION" -> R.string.sync_check_permission
+                                        "PROFILE_MISSING", "PROFILE_INACTIVE", "PROFILE_TENANT", "PROFILE_ROLE" -> R.string.sync_profile_mismatch
+                                        "MOSQUE_MISSING", "MOSQUE_INACTIVE" -> R.string.sync_mosque_unavailable
+                                        "PROFILE_DENIED", "MOSQUE_DENIED", "RECEIPT_DENIED" -> R.string.sync_read_denied
+                                        "WRITE_DENIED" -> R.string.sync_write_denied
                                         "CONFLICT" -> R.string.sync_conflict_help
                                         else -> R.string.sync_check_record
                                     }),
                                         style = MaterialTheme.typography.bodySmall)
+                                    draft.failure?.takeIf { it in setOf("PROFILE_MISSING", "PROFILE_INACTIVE", "PROFILE_TENANT", "PROFILE_ROLE", "MOSQUE_MISSING", "MOSQUE_INACTIVE", "PROFILE_DENIED", "MOSQUE_DENIED", "RECEIPT_DENIED", "WRITE_DENIED") }?.let { code ->
+                                        Text(stringResource(R.string.sync_diagnostic_code, code), style = MaterialTheme.typography.labelSmall)
+                                    }
                                     TextButton(enabled = online, onClick = { onRetry(draft) }) { Text(stringResource(R.string.retry)) }
                                     TextButton(onClick = { toDiscard = draft }) { Text(stringResource(R.string.discard_local)) }
                                 }

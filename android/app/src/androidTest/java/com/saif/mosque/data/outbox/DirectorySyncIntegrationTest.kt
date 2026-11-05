@@ -126,8 +126,17 @@ class DirectorySyncIntegrationTest {
         val revoked = store.addDonor("outbox-inactive", "sync-test-mosque", Donor(name = "Blocked"))
         assertEquals(ListenableWorker.Result.success(), sync(revoked.id))
         assertEquals("BLOCKED", store.find(revoked.id)?.state)
-        assertEquals("PERMISSION", store.find(revoked.id)?.failure)
+        assertEquals("PROFILE_INACTIVE", store.find(revoked.id)?.failure)
         store.remove(revoked.id, "outbox-inactive")
+        // An active administrator can read this tenant, but a missing counter
+        // makes the paired write fail. Preserve the draft and expose the stage.
+        login("badcounter@example.test")
+        val bad = store.addFund("outbox-badcounter", "sync-badcounter", Fund(name = "Keep this", code = "KEP"))
+        assertEquals(ListenableWorker.Result.success(), sync(bad.id))
+        assertEquals("BLOCKED", store.find(bad.id)?.state)
+        assertEquals("WRITE_DENIED", store.find(bad.id)?.failure)
+        assertEquals(false, db.collection("mosques").document("sync-badcounter").collection("funds").document(bad.id).get(Source.SERVER).await().exists())
+        store.discardBlocked(bad.id, "outbox-badcounter", "sync-badcounter")
         auth.signOut()
     }
 }

@@ -97,22 +97,27 @@ class DirectorySyncWorker(context: Context, params: WorkerParameters) : Coroutin
                     snap.getString("action") == draft.action
             }
         }
+        var stage = "PROFILE"
         try {
             val profile = db.collection("users").document(draft.uid).get(Source.SERVER).await()
-            if (!profile.exists() || !DirectorySyncPolicy.permitted(draft.kind, profile.getString("role"),
-                    profile.getBoolean("active") == true, profile.getString("mosqueId"), draft.mosqueId)) {
-                store.markBlocked(id, "PERMISSION")
+            val profileFailure = DirectorySyncPolicy.profileFailure(profile.exists(), draft.kind, profile.getString("role"),
+                profile.getBoolean("active") == true, profile.getString("mosqueId"), draft.mosqueId)
+            if (profileFailure != null) {
+                store.markBlocked(id, profileFailure)
                 return Result.success()
             }
+            stage = "MOSQUE"
             val mosque = parent.get(Source.SERVER).await()
             if (!mosque.exists() || mosque.getBoolean("active") != true) {
-                store.markBlocked(id, "PERMISSION")
+                store.markBlocked(id, if (mosque.exists()) "MOSQUE_INACTIVE" else "MOSQUE_MISSING")
                 return Result.success()
             }
+            stage = "RECEIPT"
             if (committed()) { store.remove(id, draft.uid); return Result.success() }
             if (auth.currentUser?.uid != draft.uid) return Result.success()
             val gson = Gson()
             if (draft.action != "add") {
+                stage = "WRITE"
                 db.runTransaction { tx ->
                     val priorReceipt = tx.get(receipt)
                     if (priorReceipt.exists()) {
@@ -163,6 +168,7 @@ class DirectorySyncWorker(context: Context, params: WorkerParameters) : Coroutin
                     "syncOpId" to draft.id, "syncOwner" to draft.uid) }
             }
             val counter = if (draft.kind == "funds") "fundCount" else "donorCount"
+            stage = "WRITE"
             db.batch().set(ref, fields).update(parent, mapOf(counter to FieldValue.increment(1),
                 "directoryOpId" to draft.id, "directoryOpKind" to draft.kind)).commit().await()
             // A resolved commit is an acknowledgement; retain the row if local removal fails.
@@ -183,7 +189,7 @@ class DirectorySyncWorker(context: Context, params: WorkerParameters) : Coroutin
             if (transient) return Result.retry()
             store.markBlocked(id, when {
                 e is DirectoryConflictException -> "CONFLICT"
-                e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED -> "PERMISSION"
+                e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED -> DirectorySyncPolicy.permissionFailure(stage)
                 else -> "UNKNOWN"
             })
             return Result.success()

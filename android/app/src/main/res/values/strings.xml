@@ -235,6 +235,11 @@
     <string name="pending_explanation">These items are stored on this device. They are not confirmed online or included in balances.</string>
     <string name="sync_waiting">Waiting to sync</string>
     <string name="sync_unconfirmed">Sync not confirmed</string>
+    <string name="sync_diagnostic_code">Code: %1$s</string>
+    <string name="sync_profile_mismatch">The server profile is missing, inactive, or does not match this mosque or role. The record may already be on the server.</string>
+    <string name="sync_mosque_unavailable">The server mosque is missing or inactive. The record may already be on the server.</string>
+    <string name="sync_read_denied">Firebase denied a required read. Check the project and published rules; the record may already be on the server.</string>
+    <string name="sync_write_denied">Firebase denied the sync write. Check the published rules and account counters; the record may already be on the server.</string>
     <string name="sync_check_permission">Check access and connection. It may already have reached the server.</string>
     <string name="sync_check_record">Check the online record before retrying; it may already have reached the server.</string>
     <string name="local_pending_saved">Saved on device; waiting to sync.</string>

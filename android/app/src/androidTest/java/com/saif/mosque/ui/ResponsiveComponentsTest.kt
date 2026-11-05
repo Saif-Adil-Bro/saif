@@ -92,4 +92,13 @@ class ResponsiveComponentsTest {
         compose.onNodeWithText(context.getString(R.string.retry)).performClick()
         compose.runOnIdle { assertEquals(1, retries) }
     }
+    @Test fun syncDenialShowsNonSensitiveDiagnosticCode() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val draft = DirectoryDraft("id", "u", "m", "funds", "Fund", "{}", 1L, "BLOCKED", "WRITE_DENIED")
+        compose.setContent { MosqueTheme { PendingDirectory(listOf(draft), online = true, onRetry = {}) } }
+        compose.onNodeWithText(context.getString(R.string.pending_count, 1)).performClick()
+        compose.onNodeWithText(context.getString(R.string.sync_write_denied)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.sync_diagnostic_code, "WRITE_DENIED")).assertIsDisplayed()
+    }
+
 }
