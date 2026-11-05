@@ -25,8 +25,12 @@ transfer creates with integer-poisha balances and atomic Firestore invariants.
 `ledger-prototype.test.mjs` exercises authorized writes, replay, tampering,
 tenant isolation, overdraft and concurrent spending using the emulator.
 
-It is not wired into the Android app and does not yet support edits, deletes,
-offline queueing, historical-data migration or full calendar-date validation.
+The isolated `PrototypeLedgerWriter` exercises Android Firestore transactions,
+exact retry payloads, integer arithmetic and missing-migration refusal against
+these rules in a separately started Auth/Firestore emulator. It is **not wired
+into the app's repository, UI or offline queue** and does not yet support edits,
+deletes, offline queueing, historical-data migration or full rules-level
+calendar-date validation.
 The experiment uses new `balancePoisha`, `totalBalancePoisha` and
 `totalDonatedPoisha` aggregate fields alongside the existing taka fields. The
 current callable backend does not maintain these fields, so mixing the two would
