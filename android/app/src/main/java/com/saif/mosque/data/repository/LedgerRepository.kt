@@ -14,6 +14,9 @@ import com.saif.mosque.data.model.Mosque
 import com.saif.mosque.data.model.Transfer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.tasks.await
 
 // Legacy entries lack this field. A malformed marker must not silently make a
@@ -23,6 +26,24 @@ internal fun visibleLedgerMarker(present: Boolean, value: Any?): Boolean = !pres
 private fun <T : Any> QuerySnapshot.visibleLedgerRecords(type: Class<T>): List<T> =
     documents.asSequence().filter { visibleLedgerMarker(it.contains("voided"), it.get("voided")) }
         .mapNotNull { it.toObject(type) }.toList()
+
+/** Expand only when a limited window contains too many tombstones. Legacy
+ * documents lack the marker, so a server-side `voided == false` filter is unsafe.
+ * Each replacement listener is removed by snapshotsFlow on cancellation. */
+private fun <T : Any> Query.recentVisible(type: Class<T>): Flow<List<T>> = flow {
+    var window = 10L
+    while (true) {
+        var expand = false
+        limit(window).snapshotsFlow().takeWhile { snapshot ->
+            val visible = snapshot.visibleLedgerRecords(type)
+            expand = visible.size < 10 && snapshot.size().toLong() >= window && window < Int.MAX_VALUE.toLong()
+            if (!expand) emit(visible.take(10))
+            !expand
+        }.collect { }
+        if (!expand) return@flow
+        window = (window * 2).coerceAtMost(Int.MAX_VALUE.toLong())
+    }
+}
 
 /** Tenant streams and calls to the trusted mutation backend. */
 class LedgerRepository(
@@ -59,19 +80,12 @@ class LedgerRepository(
         db.collection("users").whereEqualTo("mosqueId", mosqueId).snapshotsFlow()
             .map { it.toObjects(AppUser::class.java) }
 
-    // Filtering after a server limit can hide older live rows when the newest
-    // entries are voided. Legacy rows have no voided field, so Firestore cannot
-    // query both legacy and live rows by that field. This reads the full history;
-    // replace it only after a safe marker backfill/indexed pagination rollout.
     fun observeRecentContributions(mosqueId: String): Flow<List<Contribution>> =
-        coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.visibleLedgerRecords(Contribution::class.java).take(10) }
+        coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING).recentVisible(Contribution::class.java)
     fun observeRecentExpenses(mosqueId: String): Flow<List<Expense>> =
-        coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.visibleLedgerRecords(Expense::class.java).take(10) }
+        coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING).recentVisible(Expense::class.java)
     fun observeRecentTransfers(mosqueId: String): Flow<List<Transfer>> =
-        coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.visibleLedgerRecords(Transfer::class.java).take(10) }
+        coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING).recentVisible(Transfer::class.java)
     fun observeMonthContributions(mosqueId: String, start: String, end: String): Flow<List<Contribution>> =
         coll(mosqueId, "contributions").whereGreaterThanOrEqualTo("date", start).whereLessThanOrEqualTo("date", end)
             .snapshotsFlow().map { it.visibleLedgerRecords(Contribution::class.java) }

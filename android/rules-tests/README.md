@@ -58,9 +58,10 @@ app, reports, migration or offline queue. The design and emulator suite still
 need review and must not be deployed. In particular, tombstones require filtering
 from financial views and reports and verifiable audit handling before activation.
 The Android read paths now exclude `voided` and malformed markers, including from
-dashboard recent items and report queries. Recent views currently read the full
-history before taking ten, which can be expensive on Spark; a safe backfill and
-indexed/paginated rollout remains necessary. The legacy audit fails closed on
+dashboard recent items and report queries. Recent views begin with a ten-record
+window and expand it only when tombstones hide older live rows. A long run of
+voided records can still require many reads; a safe marker backfill and indexed
+pagination strategy remains necessary. The legacy audit fails closed on
 correction markers rather than verifying receipt history; correction activation
 still requires a complete receipt-chain audit.
 
