@@ -210,10 +210,11 @@ jobs:
               except (OSError, ET.ParseError):
                   pass
           from pathlib import Path
-          log = Path('/tmp/ledger-prototype-test.log')
-          if log.exists():
-              tail = log.read_text(errors='replace')[-9000:]
-              print('::error::Ledger prototype test log tail: ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          for filename in ['/tmp/ledger-migration-test.log', '/tmp/ledger-prototype-test.log']:
+              log = Path(filename)
+              if log.exists():
+                  tail = log.read_text(errors='replace')[-9000:]
+                  print('::error::Ledger test log tail: ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
           PYCODE
 
   # Optional: signed release APK. Requires 3 more secrets (see README):
