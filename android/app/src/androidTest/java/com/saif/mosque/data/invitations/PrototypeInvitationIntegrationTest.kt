@@ -41,7 +41,8 @@ class PrototypeInvitationIntegrationTest {
         val existingInvite = invitation.copy(id=service.newId("invite-test"), email="inv-existing@example.test")
         val revoked = invitation.copy(id=service.newId("invite-test"), email="inv-revoked@example.test")
         service.issue(unverifiedInvite); service.issue(existingInvite); service.issue(revoked)
-        parent.collection("invitations").document(revoked.id).update("status", "revoked").await()
+        service.revoke("invite-test", revoked.id, "inv-admin")
+        service.revoke("invite-test", revoked.id, "inv-admin")
         assertEquals(PrototypeInvitationStatus.REVOKED, service.issue(revoked))
         login("inv-wrong@example.test")
         assertTrue(runCatching { service.redeem("invite-test", invitation.id) }.isFailure)
@@ -66,6 +67,7 @@ class PrototypeInvitationIntegrationTest {
         assertEquals("inv-member", claim.getString("uid"))
         login("inv-admin@example.test")
         assertEquals(PrototypeInvitationStatus.ACCEPTED, service.issue(invitation))
+        assertTrue(runCatching { service.revoke("invite-test", invitation.id, "inv-admin") }.isFailure)
         assertEquals(2L, parent.get(Source.SERVER).await().getLong("memberCount"))
         auth.signOut()
     }

@@ -55,11 +55,30 @@ class PrototypeInvitationService(private val db: FirebaseFirestore, private val 
             val actual = saved.data ?: throw e
             if (expected.any { (key, value) -> key != "status" && actual[key] != value }) throw InvitationConflict()
             return when (actual["status"]) {
-                "pending" -> PrototypeInvitationStatus.PENDING
-                "accepted" -> PrototypeInvitationStatus.ACCEPTED
-                "revoked" -> PrototypeInvitationStatus.REVOKED
+                "pending" -> if (actual.keys == expected.keys) PrototypeInvitationStatus.PENDING else throw InvitationConflict()
+                "accepted" -> if (actual.keys == expected.keys + "acceptedBy" &&
+                    (actual["acceptedBy"] as? String)?.let(::validId) == true) PrototypeInvitationStatus.ACCEPTED else throw InvitationConflict()
+                "revoked" -> if (actual.keys == expected.keys) PrototypeInvitationStatus.REVOKED else throw InvitationConflict()
                 else -> throw InvitationConflict()
             }
+        }
+    }
+
+    /** Idempotent revoke; a concurrently accepted invitation is never reported as revoked. */
+    suspend fun revoke(mosqueId: String, inviteId: String, issuerUid: String) {
+        require(validId(mosqueId) && validId(inviteId) && validId(issuerUid))
+        ensureUid(issuerUid)
+        val ref = db.collection("mosques").document(mosqueId).collection("invitations").document(inviteId)
+        try {
+            ref.update("status", "revoked").await()
+            ensureUid(issuerUid)
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
+            ensureUid(issuerUid)
+            val saved = try { ref.get(Source.SERVER).await() }
+                catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { throw e }
+            ensureUid(issuerUid)
+            if (saved.metadata.hasPendingWrites()) throw InvitationPendingWrite()
+            if (saved.getString("status") != "revoked") throw e
         }
     }
 
