@@ -150,7 +150,7 @@ class PrototypeJoinCoordinator(private val gateway: PrototypeJoinGateway, privat
             _state.update { it.copy(phase = if (currentIdentity?.uid == original.uid) PrototypeJoinPhase.COMPLETE else
                 if (currentIdentity == null) PrototypeJoinPhase.ACCOUNT else PrototypeJoinPhase.VERIFY,
                 identity = currentIdentity, message = if (currentIdentity?.uid == original.uid) null else PrototypeJoinMessage.AUTH_UNCERTAIN) }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
             _state.update { it.copy(identity = gateway.identity(), message = if (e is InvitationNeedsVerification)
                 PrototypeJoinMessage.VERIFY_EMAIL else PrototypeJoinMessage.REDEEM_UNCONFIRMED) }
         }
