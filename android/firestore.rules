@@ -200,7 +200,7 @@ service cloud.firestore {
       let k = next.ledgerOpKind;
       let opId = next.ledgerOpId;
       let op = getAfter(opPath(m, k, opId)).data;
-      return validId(opId) && canMoney(m, k) && freshOp(m, k, opId) && shape(op, m, k) &&
+      return validId(opId) && freshOp(m, k, opId) &&
         (k == 'contributions' && op.accountId == id && fundDelta(m, id, k, opId, op.amountPoisha) ||
          k == 'expenses' && op.accountId == id && fundDelta(m, id, k, opId, -op.amountPoisha) ||
          k == 'transfers' && op.fromAccountId == id && fundDelta(m, id, k, opId, -op.amountPoisha) ||
@@ -211,16 +211,15 @@ service cloud.firestore {
       let k = next.ledgerOpKind;
       let opId = next.ledgerOpId;
       let op = getAfter(opPath(m, k, opId)).data;
-      return validId(opId) && k in ['contributions','expenses'] && canMoney(m, k) &&
-        freshOp(m, k, opId) && shape(op, m, k) &&
+      return validId(opId) && k in ['contributions','expenses'] && freshOp(m, k, opId) &&
         mosqueDelta(m, k, opId, k == 'contributions' ? op.amountPoisha : -op.amountPoisha);
     }
     function donorUpdate(m, id) {
       let next = request.resource.data;
       let opId = next.ledgerOpId;
       let op = getAfter(opPath(m, 'contributions', opId)).data;
-      return validId(opId) && next.ledgerOpKind == 'contributions' && canMoney(m, 'contributions') &&
-        freshOp(m, 'contributions', opId) && shape(op, m, 'contributions') && op.donorId == id &&
+      return validId(opId) && next.ledgerOpKind == 'contributions' &&
+        freshOp(m, 'contributions', opId) && op.donorId == id &&
         donorDelta(m, id, opId, op.amountPoisha, op.donorName);
     }
     match /users/{uid} {
@@ -236,23 +235,26 @@ service cloud.firestore {
       // Members may read their own inactive mosque to receive the correct login error.
       allow read: if platform() || sameTenant(mosqueId);
       allow create, delete: if false;
-      allow update: if (platform()
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind'])
+        ? mosqueUpdate(mosqueId)
+        : ((platform()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
           'establishedYear', 'registrationNo', 'active'
         ])
         && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
         || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
-        || memberCounterDelete(mosqueId) || mosqueUpdate(mosqueId);
+        || memberCounterDelete(mosqueId));
       match /{collection}/{doc} {
         allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts']
           && (platform() || activeTenant(mosqueId));
         allow create: if (collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc))
           || (collection == 'syncReceipts' && receiptCreate(mosqueId, doc))
           || (collection in ['contributions', 'expenses', 'transfers'] && createLedger(mosqueId, collection, doc));
-        allow update: if (collection in ['funds', 'donors'] && directoryUpdate(mosqueId, collection, doc))
-          || (collection == 'funds' && fundUpdate(mosqueId, doc))
-          || (collection == 'donors' && donorUpdate(mosqueId, doc));
+        allow update: if collection in ['funds', 'donors'] &&
+          (request.resource.data.diff(resource.data).affectedKeys().hasAny(['balance','balancePoisha','totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind'])
+            ? (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc))
+            : directoryUpdate(mosqueId, collection, doc));
         allow delete: if false;
       }
     }
