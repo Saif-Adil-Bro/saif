@@ -4,10 +4,14 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Source
 import com.saif.mosque.MosqueApp
 import com.saif.mosque.data.model.Role
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -16,6 +20,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.Date
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 
 /** Dedicated Auth/Firestore emulators and test-only invitation rules. */
 @RunWith(AndroidJUnit4::class)
@@ -69,6 +76,52 @@ class PrototypeInvitationIntegrationTest {
         assertEquals(PrototypeInvitationStatus.ACCEPTED, service.issue(invitation))
         assertTrue(runCatching { service.revoke("invite-test", invitation.id, "inv-admin") }.isFailure)
         assertEquals(2L, parent.get(Source.SERVER).await().getLong("memberCount"))
+
+        // Sign up in a separate FirebaseApp: the signed-in admin is unaffected.
+        val nextInvite = invitation.copy(id=service.newId("invite-test"), email="inv-new@example.test")
+        service.issue(nextInvite)
+        assertTrue(runCatching { PrototypeOnboardingSession(auth, db) }.isFailure)
+        val onboardingApp = PrototypeOnboardingEnvironment.get(app)
+        assertEquals(onboardingApp, PrototypeOnboardingEnvironment.get(app))
+        val secondaryAuth = FirebaseAuth.getInstance(onboardingApp)
+        val secondaryDb = FirebaseFirestore.getInstance(onboardingApp)
+        secondaryAuth.useEmulator("10.0.2.2", 9099)
+        secondaryDb.useEmulator("10.0.2.2", 8080)
+        secondaryAuth.signOut()
+        val failedMail = PrototypeOnboardingSession(secondaryAuth, secondaryDb) { throw IllegalStateException("test mail failure") }
+        assertEquals(PrototypeSignupResult.ACCOUNT_CREATED_EMAIL_NOT_SENT, failedMail.signUp("inv-mail-failure@example.test", "test-only-password"))
+        assertEquals("inv-admin", auth.currentUser?.uid)
+        failedMail.signOut()
+        // A created Auth account is recoverable after email delivery failure.
+        val onboarding = prototypeOnboardingSession(onboardingApp)
+        onboarding.signIn("inv-mail-failure@example.test", "test-only-password")
+        assertEquals(PrototypeVerificationResult.SENT, onboarding.resendVerification())
+        onboarding.signOut()
+        assertEquals(PrototypeSignupResult.VERIFICATION_SENT, onboarding.signUp("INV-NEW@example.test", "test-only-password"))
+        assertEquals("inv-admin", auth.currentUser?.uid)
+        assertTrue(runCatching { onboarding.redeem("invite-test", nextInvite.id) }.exceptionOrNull() is InvitationNeedsVerification)
+        // Simulate process/session recovery before opening the verification email.
+        onboarding.signOut()
+        onboarding.signIn("inv-new@example.test", "test-only-password")
+        assertEquals(PrototypeVerificationResult.SENT, onboarding.resendVerification())
+        val code = withContext(Dispatchers.IO) {
+            val project = onboardingApp.options.projectId!!
+            val connection = URL("http://10.0.2.2:9099/emulator/v1/projects/$project/oobCodes").openConnection() as HttpURLConnection
+            try {
+                val codes = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getJSONArray("oobCodes")
+                (0 until codes.length()).map { codes.getJSONObject(it) }.last {
+                    it.optString("email") == "inv-new@example.test" && it.optString("requestType") == "VERIFY_EMAIL"
+                }.getString("oobCode")
+            } finally { connection.disconnect() }
+        }
+        secondaryAuth.applyActionCode(code).await()
+        assertEquals(PrototypeVerificationResult.ALREADY_VERIFIED, onboarding.resendVerification())
+        onboarding.redeem("invite-test", nextInvite.id)
+        onboarding.redeem("invite-test", nextInvite.id)
+        assertEquals("inv-admin", auth.currentUser?.uid)
+        assertEquals(3L, parent.get(Source.SERVER).await().getLong("memberCount"))
+        assertTrue(db.collection("users").document(secondaryAuth.currentUser!!.uid).get(Source.SERVER).await().exists())
+        onboarding.signOut()
         auth.signOut()
     }
 }

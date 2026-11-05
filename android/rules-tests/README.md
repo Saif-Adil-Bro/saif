@@ -103,11 +103,14 @@ email within a tenant. `PrototypeInvitationService` is an online-only, isolated
 Android experiment that issues stable-ID invitations, verifies a refreshed Auth
 token and redeems the four-document batch. It checks server-confirmed profile,
 invitation and claim on retry, rather than incrementing the counter twice. It is
-exercised against dedicated Auth and Firestore emulators; it is not wired into
-the app, a durable queue or the deployed rules.
+exercised against dedicated Auth and Firestore emulators. A separate, stable
+named FirebaseApp prototype lets a prospective member sign up, resend verification,
+re-sign in after partial failure and redeem without replacing the primary admin
+session; it never automatically deletes an Auth account. This is not wired into
+the app UI, a durable queue or deployed rules.
 
 A production design still needs an invitation sharing/discovery and email
-verification UI, signup and recovery for orphaned Auth accounts, existing-account
+verification and signup UI, safe recovery for orphaned Auth accounts, existing-account
 and cross-tenant behavior, offline status/retry with durable local identity and cancellation handling, issuer/admin lifecycle and
 revocation policy, and a safe backfill/reconciliation of claims for all existing
 profiles (including case/collision handling) before enabling redemption. The
