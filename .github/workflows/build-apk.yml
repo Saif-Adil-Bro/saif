@@ -213,7 +213,7 @@ jobs:
               except (OSError, ET.ParseError):
                   pass
           from pathlib import Path
-          for filename in ['/tmp/ledger-migration-test.log', '/tmp/ledger-prototype-test.log', '/tmp/ledger-correction-test.log']:
+          for filename in ['/tmp/ledger-migration-test.log', '/tmp/ledger-prototype-test.log', '/tmp/ledger-correction-test.log', '/tmp/member-invitation-test.log']:
               log = Path(filename)
               if log.exists():
                   tail = log.read_text(errors='replace')[-9000:]

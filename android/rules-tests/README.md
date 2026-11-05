@@ -99,12 +99,16 @@ lowercase email. The recipient must authenticate with that exact verified email;
 a single atomic batch creates their own profile and an email claim, accepts the
 invitation, and increments the tenant member count. Issuer permission is checked
 again at redemption. Claims prevent concurrent duplicate redemption for the same
-email within a tenant. This is an experiment only, not the deployed rules or an
-implemented user flow.
+email within a tenant. `PrototypeInvitationService` is an online-only, isolated
+Android experiment that issues stable-ID invitations, verifies a refreshed Auth
+token and redeems the four-document batch. It checks server-confirmed profile,
+invitation and claim on retry, rather than incrementing the counter twice. It is
+exercised against dedicated Auth and Firestore emulators; it is not wired into
+the app, a durable queue or the deployed rules.
 
 A production design still needs an invitation sharing/discovery and email
 verification UI, signup and recovery for orphaned Auth accounts, existing-account
-and cross-tenant behavior, offline status/retry, issuer/admin lifecycle and
+and cross-tenant behavior, offline status/retry with durable local identity and cancellation handling, issuer/admin lifecycle and
 revocation policy, and a safe backfill/reconciliation of claims for all existing
 profiles (including case/collision handling) before enabling redemption. The
 claims deliberately cannot be deleted or reassigned by clients in this prototype;
