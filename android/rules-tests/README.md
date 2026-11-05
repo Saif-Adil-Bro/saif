@@ -81,3 +81,25 @@ successful tenant transactions and hostile direct Firestore requests. At minimum
 
 Do not weaken the rules simply to get Spark writes working. Rules must enforce
 accounting invariants against modified clients, not only rely on Android UI checks.
+
+### Isolated member invitation experiment (not deployable)
+
+`member-invite-prototype.rules` and its adversarial emulator tests explore Spark-only
+onboarding. An active authorized issuer creates a time-limited invitation for a
+lowercase email. The recipient must authenticate with that exact verified email;
+a single atomic batch creates their own profile and an email claim, accepts the
+invitation, and increments the tenant member count. Issuer permission is checked
+again at redemption. Claims prevent concurrent duplicate redemption for the same
+email within a tenant. This is an experiment only, not the deployed rules or an
+implemented user flow.
+
+A production design still needs an invitation sharing/discovery and email
+verification UI, signup and recovery for orphaned Auth accounts, existing-account
+and cross-tenant behavior, offline status/retry, issuer/admin lifecycle and
+revocation policy, and a safe backfill/reconciliation of claims for all existing
+profiles (including case/collision handling) before enabling redemption. The
+claims deliberately cannot be deleted or reassigned by clients in this prototype;
+member deletion/reinvitation and lifecycle cleanup therefore remain unresolved.
+Firebase Authentication provider/account-linking configuration, email ownership
+assumptions, quotas and real-device behavior also need verification. Do not deploy
+these rules or use them to provision live accounts.

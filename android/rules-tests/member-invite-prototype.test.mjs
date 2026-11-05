@@ -92,3 +92,25 @@ test('a forged privileged invitation cannot bypass issuer role validation',async
  await env.withSecurityRulesDisabled(ctx=>setDoc(inviteRef(ctx.firestore()),invite('member@example.test','SUPERADMIN','admin')));
  await assertFails(redeem(actor('member','member@example.test'),'member','member@example.test','code','SUPERADMIN'));
 });
+test('invitation details are private and creation validates expiration and normalized email',async()=>{
+ const admin=actor('admin');
+ await assertFails(setDoc(inviteRef(admin,'invalid-expiry'),{...invite(),expiresAt:Timestamp.fromMillis(Date.now()+8*86400000)}));
+ await assertFails(setDoc(inviteRef(admin,'invalid-email'),invite('Member@example.test')));
+ await assertSucceeds(setDoc(inviteRef(admin),invite()));
+ await assertFails(getDoc(inviteRef(actor('wrong','wrong@example.test'))));
+ await assertFails(getDoc(inviteRef(env.authenticatedContext('unverified',{email:'member@example.test',email_verified:false}).firestore())));
+ await assertSucceeds(getDoc(inviteRef(actor('member','member@example.test'))));
+});
+test('missing claim, invite, profile or counter write cannot partially redeem',async()=>{
+ await assertSucceeds(setDoc(inviteRef(actor('admin')),invite()));
+ const db=actor('member','member@example.test');
+ for(const missing of ['profile','claim','invite','counter']) {
+  const b=writeBatch(db);
+  if(missing!=='profile') b.set(doc(db,'users/member'),profile());
+  if(missing!=='claim') b.set(doc(db,'mosques/m/memberClaims/member@example.test'),{uid:'member',inviteId:'code'});
+  if(missing!=='invite') b.update(inviteRef(db),{status:'accepted',acceptedBy:'member'});
+  if(missing!=='counter') b.update(doc(db,'mosques/m'),{memberCount:increment(1),memberOpId:'member'});
+  await assertFails(b.commit());
+ }
+ await assertSucceeds(redeem(db,'member'));
+});
