@@ -89,21 +89,21 @@ class PrototypeInvitationIntegrationTest {
         secondaryDb.useEmulator("10.0.2.2", 8080)
         secondaryAuth.signOut()
         val failedMail = PrototypeOnboardingSession(secondaryAuth, secondaryDb) { throw IllegalStateException("test mail failure") }
-        assertEquals(PrototypeSignupResult.ACCOUNT_CREATED_EMAIL_NOT_SENT, failedMail.signUp("inv-mail-failure@example.test", "test-only-password"))
+        assertEquals(PrototypeSignupResult.ACCOUNT_CREATED_VERIFICATION_UNCONFIRMED, failedMail.signUp("inv-mail-failure@example.test", "test-only-password"))
         assertEquals("inv-admin", auth.currentUser?.uid)
         failedMail.signOut()
         // A created Auth account is recoverable after email delivery failure.
         val onboarding = prototypeOnboardingSession(onboardingApp)
         onboarding.signIn("inv-mail-failure@example.test", "test-only-password")
-        assertEquals(PrototypeVerificationResult.SENT, onboarding.resendVerification())
+        assertEquals(PrototypeVerificationResult.REQUESTED, onboarding.resendVerification())
         onboarding.signOut()
-        assertEquals(PrototypeSignupResult.VERIFICATION_SENT, onboarding.signUp("INV-NEW@example.test", "test-only-password"))
+        assertEquals(PrototypeSignupResult.VERIFICATION_REQUESTED, onboarding.signUp("INV-NEW@example.test", "test-only-password"))
         assertEquals("inv-admin", auth.currentUser?.uid)
         assertTrue(runCatching { onboarding.redeem("invite-test", nextInvite.id) }.exceptionOrNull() is InvitationNeedsVerification)
         // Simulate process/session recovery before opening the verification email.
         onboarding.signOut()
         onboarding.signIn("inv-new@example.test", "test-only-password")
-        assertEquals(PrototypeVerificationResult.SENT, onboarding.resendVerification())
+        assertEquals(PrototypeVerificationResult.REQUESTED, onboarding.resendVerification())
         val code = withContext(Dispatchers.IO) {
             val project = onboardingApp.options.projectId!!
             val connection = URL("http://10.0.2.2:9099/emulator/v1/projects/$project/oobCodes").openConnection() as HttpURLConnection

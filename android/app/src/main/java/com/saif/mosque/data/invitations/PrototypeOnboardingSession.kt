@@ -25,8 +25,8 @@ object PrototypeOnboardingEnvironment {
     }
 }
 
-enum class PrototypeSignupResult { VERIFICATION_SENT, ACCOUNT_CREATED_EMAIL_NOT_SENT }
-enum class PrototypeVerificationResult { SENT, ALREADY_VERIFIED }
+enum class PrototypeSignupResult { VERIFICATION_REQUESTED, ACCOUNT_CREATED_VERIFICATION_UNCONFIRMED }
+enum class PrototypeVerificationResult { REQUESTED, ALREADY_VERIFIED }
 
 /**
  * Online-only Auth signup/recovery experiment. Never stores passwords. Firebase
@@ -55,11 +55,12 @@ class PrototypeOnboardingSession(
         return try {
             sendVerification(result.user!!)
             ensureUid(uid)
-            PrototypeSignupResult.VERIFICATION_SENT
+            PrototypeSignupResult.VERIFICATION_REQUESTED
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             ensureUid(uid)
-            // Do not present this as a failed account creation: it already exists.
-            PrototypeSignupResult.ACCOUNT_CREATED_EMAIL_NOT_SENT
+            // Account creation succeeded. Email delivery or even request completion
+            // may be uncertain; never claim the message was not delivered.
+            PrototypeSignupResult.ACCOUNT_CREATED_VERIFICATION_UNCONFIRMED
         }
     }
 
@@ -79,7 +80,7 @@ class PrototypeOnboardingSession(
         if (user.isEmailVerified) return PrototypeVerificationResult.ALREADY_VERIFIED
         sendVerification(user)
         ensureUid(uid)
-        return PrototypeVerificationResult.SENT
+        return PrototypeVerificationResult.REQUESTED
     }
 
     suspend fun redeem(mosqueId: String, inviteId: String) = invitations.redeem(mosqueId, inviteId)
