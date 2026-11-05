@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
-/** Experimental durable drafts. No production UI or WorkManager worker is connected yet. */
+/** Durable account-scoped drafts for the work-in-progress v2 ledger. */
 data class PrototypeQueuedLedger(val draft: PrototypeLedgerDraft, val state: String, val failure: String?)
 
 class PrototypeLedgerOutbox internal constructor(context: Context, name: String = "ledger-prototype-outbox.db") :

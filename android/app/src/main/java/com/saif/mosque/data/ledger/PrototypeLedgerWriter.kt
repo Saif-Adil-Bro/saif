@@ -5,7 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
 
-/** Immutable append request. This prototype is NOT wired into production or the UI. */
+/** Immutable append request. V2 remains work in progress and requires coordinated migration. */
 data class PrototypeLedgerDraft(
     val id: String, val uid: String, val mosqueId: String, val kind: String,
     val amountPoisha: Long, val sourceFundId: String, val destinationFundId: String = "",
@@ -15,9 +15,9 @@ data class PrototypeLedgerDraft(
 )
 
 /**
- * Transaction writer for ledger-prototype.rules only. Not safe with the deployed rules
- * or mixed legacy writers. A future outbox must persist the exact draft before calling
- * this and only remove it after acknowledgement; this class is not an offline queue.
+ * Transaction writer for the gated v2 rules. Not safe with mixed legacy writers.
+ * The outbox persists the exact draft before calling this and removes it only after
+ * acknowledgement; do not deploy before migration and writer freeze are complete.
  */
 class PrototypeLedgerWriter(private val db: FirebaseFirestore, private val currentUid: () -> String?) {
     suspend fun commit(draft: PrototypeLedgerDraft) {

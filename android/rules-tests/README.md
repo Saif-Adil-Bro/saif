@@ -4,7 +4,8 @@ These tests describe the security boundary of the proposed partial Spark migrati
 They exercise direct fund/donor directory writes, denial of legacy ledger writes,
 and atomic ledger v2 creates when an admin-only migration flag is set.
 The full Spark migration is **not** complete and must not be deployed as a fix for
-`NOT_FOUND`. The app's ledger and provisioning are not yet connected to v2.
+`NOT_FOUND`. New ledger entries are connected to v2; edits, deletes, provisioning
+and a safe historical-data migration are not.
 Rules and client must be reviewed and tested together before any rollout.
 
 To run locally, install JDK 17+ and Firebase CLI and execute:
@@ -26,18 +27,15 @@ transfer creates with integer-poisha balances and atomic Firestore invariants.
 `ledger-prototype.test.mjs` exercises authorized writes, replay, tampering,
 tenant isolation, overdraft and concurrent spending using the emulator.
 
-The isolated `PrototypeLedgerWriter` exercises Android Firestore transactions,
-exact retry payloads, integer arithmetic and missing-migration refusal against
-these rules in a separately started Auth/Firestore emulator. It is **not wired
-into the app's repository or UI**. A separate experimental SQLite outbox stores
-immutable UID/mosque-scoped drafts and is excluded from backup. An experimental
-WorkManager worker and periodic recovery are exercised only by the isolated
-emulator tests; no production screen or startup path schedules them, so they do
-not yet sync user data. One WorkManager task drains each account/tenant in local
-insertion order; periodic recovery covers a missed scheduling attempt. Real device
-behavior, dependent-operation conflicts and rollout remain to be validated. The prototype does not yet support edits,
-deletes, historical-data migration or full rules-level
-calendar-date validation.
+The `PrototypeLedgerWriter`, SQLite outbox and WorkManager worker are connected
+to new-entry screens and tested against v2 rules in a separately started emulator.
+The queue is scoped to the signed-in account and mosque, excludes pending values
+from confirmed totals and uses insertion order within a tenant/account. Recovery
+is scheduled on startup and periodically. A process may still die before scheduling;
+startup/periodic recovery covers that gap. Unsynced drafts are excluded from backup
+and are lost on uninstall or data clear. Edits, deletes, account provisioning and
+historical-data migration are not yet implemented for v2. Real devices, actual
+network loss and role changes still need validation.
 The experiment uses new `balancePoisha`, `totalBalancePoisha` and
 `totalDonatedPoisha` aggregate fields alongside the existing taka fields. The
 legacy callable backend does not maintain these fields. The updated callable

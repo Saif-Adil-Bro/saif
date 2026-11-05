@@ -78,19 +78,19 @@ replace Firestore Emulator rules/integration tests** or device testing.
 
 ## Spark plan status
 
-Fund/donor directory operations and existing-member edits/deletions have a proposed
-Firestore implementation and matching rules. CI runs the Firestore Emulator security tests, but the
-changes have not been tested on an Android device and are not deployed.
-Ledger operations and new-account provisioning still require the deployed callable
-Cloud Function, so the app is **not yet compatible with Spark-only production deployment**.
-A safe migration
-requires client transaction changes, matching Firestore rules, and provisioning
-changes. Offline-first ledger creation/editing and automatic ledger synchronization
-also remain unimplemented. The emulator security baseline and migration acceptance criteria are in
-[`android/rules-tests/README.md`](android/rules-tests/README.md). An append-only integer-poisha rules implementation is gated behind the server-only
-`ledgerVersion` migration marker; the matching client is not yet wired to the app.
-Neither this branch nor the isolated prototype may be deployed as a complete fix. Do not switch a production project to
-permissive rules as a workaround.
+This branch is a **work in progress; do not deploy**. Fund/donor directory actions
+and new contribution, expense and transfer entries can be saved in account-scoped
+SQLite queues and sent after reconnecting. Ledger v2 uses integer poisha and
+atomic security rules and only works on a tenant explicitly migrated to v2.
+Financial edits/deletes and new-account provisioning still depend on Cloud
+Functions, so the complete app remains incompatible with Spark-only production.
+
+Before enabling v2, all legacy writers must be frozen or upgraded, and the tenant's
+complete historical data backed up, reconciled, and migrated. No automatic
+migration or rollout is provided yet. Installing rules or the app alone can block
+existing operations or produce inconsistent balances if an older privileged writer
+continues. Emulator tests are not a substitute for real-device/network testing.
+See [`android/rules-tests/README.md`](android/rules-tests/README.md).
 
 ## Read-only ledger audit
 

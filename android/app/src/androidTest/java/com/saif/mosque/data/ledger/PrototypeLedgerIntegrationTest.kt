@@ -83,6 +83,12 @@ class PrototypeLedgerIntegrationTest {
         assertTrue(store.list(base.uid, base.mosqueId).isEmpty())
         assertEquals(500L, parent.collection("funds").document("main").get(Source.SERVER).await().getLong("balancePoisha"))
         assertEquals(1500L, parent.get(Source.SERVER).await().getLong("totalBalancePoisha"))
+        // The same queue boundary used by the real forms schedules a v2 sync.
+        val throughQueue = base.copy(id="queue-api", amountPoisha=100)
+        LedgerQueue(app, auth).enqueue(throughQueue)
+        withTimeout(45_000) { while (store.list(base.uid, base.mosqueId).isNotEmpty()) delay(250) }
+        assertEquals(600L, parent.collection("funds").document("main").get(Source.SERVER).await().getLong("balancePoisha"))
+        assertEquals(1600L, parent.get(Source.SERVER).await().getLong("totalBalancePoisha"))
         assertFalse(parent.collection("contributions").document("legacy").get(Source.SERVER).await().exists())
         auth.signInWithEmailAndPassword("other-ledger@example.test", "test-only-password").await()
         assertTrue(runCatching { writer.commit(base.copy(id="wrong-user")) }.isFailure)

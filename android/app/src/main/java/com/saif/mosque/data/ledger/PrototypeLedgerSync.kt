@@ -20,7 +20,7 @@ import com.saif.mosque.MosqueApp
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
-/** Experimental only: no production screens or startup paths invoke this scheduler. */
+/** WIP v2 scheduler. Production use requires the coordinated ledger migration. */
 object PrototypeLedgerSync {
     fun schedule(context: Context, draft: PrototypeLedgerDraft) {
         val request = OneTimeWorkRequestBuilder<PrototypeLedgerWorker>()
@@ -48,7 +48,7 @@ object PrototypeLedgerSync {
     }
 }
 
-/** A startup caller must also schedule recovery; no production startup path invokes it yet. */
+/** Startup and periodic recovery cover a crash between persistence and scheduling. */
 class PrototypeLedgerRecoveryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val uid = (applicationContext as MosqueApp).container.auth.currentUser?.uid ?: return Result.success()
