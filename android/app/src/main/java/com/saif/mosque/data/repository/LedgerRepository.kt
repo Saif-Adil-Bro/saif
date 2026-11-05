@@ -45,10 +45,12 @@ private fun <T : Any> Query.recentVisible(type: Class<T>): Flow<List<T>> = flow 
     }
 }
 
-/** Tenant streams and calls to the trusted mutation backend. */
+/** Tenant streams and calls to the v2 rules-validated ledger or trusted mutation backend. */
 class LedgerRepository(
     private val db: FirebaseFirestore,
-    private val session: SessionManager
+    private val session: SessionManager,
+    private val context: android.content.Context? = null,
+    private val auth: com.google.firebase.auth.FirebaseAuth = com.google.firebase.auth.FirebaseAuth.getInstance()
 ) {
     private fun mosqueRef(mosqueId: String) = db.collection("mosques").document(mosqueId)
     private fun coll(mosqueId: String, name: String) =
@@ -80,6 +82,10 @@ class LedgerRepository(
         db.collection("users").whereEqualTo("mosqueId", mosqueId).snapshotsFlow()
             .map { it.toObjects(AppUser::class.java) }
 
+    fun observeLedgerMutations(mosqueId: String): Flow<List<com.saif.mosque.data.model.LedgerMutation>> =
+        coll(mosqueId, "ledgerMutations").snapshotsFlow()
+            .map { it.toObjects(com.saif.mosque.data.model.LedgerMutation::class.java) }
+
     fun observeRecentContributions(mosqueId: String): Flow<List<Contribution>> =
         coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING).recentVisible(Contribution::class.java)
     fun observeRecentExpenses(mosqueId: String): Flow<List<Expense>> =
@@ -96,7 +102,57 @@ class LedgerRepository(
     fun observeMosque(mosqueId: String): Flow<Mosque?> =
         mosqueRef(mosqueId).snapshotsFlow().map { it.toObject(Mosque::class.java) }
 
-    // Ledger mutations still require the trusted backend; direct ledger writes are denied.
+    private suspend fun isV2Mosque(mosqueId: String): Boolean = try {
+        mosqueRef(mosqueId).get().await().getLong("ledgerVersion") == 2L
+    } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { true }
+
+    private suspend fun commitOrQueueV2Correction(
+        mosqueId: String,
+        kind: String,
+        targetId: String,
+        action: String,
+        verifySnapshot: (com.google.firebase.firestore.DocumentSnapshot) -> Boolean,
+        changes: Map<String, Any> = emptyMap()
+    ) {
+        val uid = auth.currentUser?.uid ?: throw IllegalStateException("Not signed in")
+        val snap = coll(mosqueId, kind).document(targetId).get().await()
+        if (!snap.exists() || !verifySnapshot(snap)) throw StaleRecordException()
+        val expectedBefore = com.saif.mosque.data.ledger.PrototypeCorrectionOutbox.normalizeLedgerMap(
+            snap.data ?: throw StaleRecordException()
+        )
+        val draft = com.saif.mosque.data.ledger.PrototypeCorrectionDraft(
+            id = java.util.UUID.randomUUID().toString(),
+            uid = uid,
+            mosqueId = mosqueId,
+            kind = kind,
+            targetId = targetId,
+            action = action,
+            expectedBefore = expectedBefore,
+            changes = com.saif.mosque.data.ledger.PrototypeCorrectionOutbox.normalizeLedgerMap(changes)
+        )
+        try {
+            com.saif.mosque.data.ledger.PrototypeCorrectionWriter(db) { auth.currentUser?.uid }.commit(draft)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val isTransient = e is com.google.firebase.FirebaseNetworkException ||
+                (e is com.google.firebase.firestore.FirebaseFirestoreException && e.code in setOf(
+                    com.google.firebase.firestore.FirebaseFirestoreException.Code.UNAVAILABLE,
+                    com.google.firebase.firestore.FirebaseFirestoreException.Code.DEADLINE_EXCEEDED
+                ))
+            val ctx = context
+            if (isTransient && ctx != null) {
+                com.saif.mosque.data.ledger.PrototypeCorrectionOutbox.get(ctx).enqueue(draft)
+                try {
+                    com.saif.mosque.data.ledger.PrototypeCorrectionSync.schedule(ctx, draft)
+                } catch (_: Exception) { }
+            } else {
+                throw e
+            }
+        }
+    }
+
+    // Legacy v1 callable fallback for pre-migration tenants on Blaze.
     private suspend fun mutate(kind: String, action: String, mosqueId: String,
                                id: String? = null, value: Any? = null, expected: Any? = null) {
         val data = mutableMapOf<String, Any>("operation" to if (kind in setOf("funds", "donors", "members")) "directory" else "ledger",
@@ -109,7 +165,6 @@ class LedgerRepository(
 
     // Direct directory writes are paired with their counters in one atomic batch.
     // The matching Firestore rules independently validate both sides of the batch.
-    // Accounting entries still use the trusted backend; never write balances here.
     private suspend fun addDirectory(mosqueId: String, kind: String, fields: Map<String, Any>) {
         val parent = mosqueRef(mosqueId)
         val ref = parent.collection(kind).document()
@@ -161,20 +216,199 @@ class LedgerRepository(
 
     suspend fun addContribution(mosqueId: String, c: Contribution, userId: String) =
         mutate("contributions", "add", mosqueId, value = c)
-    suspend fun updateContribution(mosqueId: String, old: Contribution, new: Contribution, userId: String) =
-        mutate("contributions", "update", mosqueId, old.id, new, old)
-    suspend fun deleteContribution(mosqueId: String, c: Contribution) =
-        mutate("contributions", "delete", mosqueId, c.id, expected = c)
+
+    suspend fun updateContribution(mosqueId: String, old: Contribution, new: Contribution, userId: String) {
+        if (isV2Mosque(mosqueId)) {
+            val poisha = com.saif.mosque.data.ledger.LedgerMath.poisha(new.amount, positive = true)
+            commitOrQueueV2Correction(
+                mosqueId = mosqueId,
+                kind = "contributions",
+                targetId = old.id,
+                action = "update",
+                verifySnapshot = { snap ->
+                    val current = snap.toObject(Contribution::class.java)
+                    current != null && current.accountId == old.accountId && current.donorId == old.donorId &&
+                        current.donorName == old.donorName && Math.round(current.amount * 100) == Math.round(old.amount * 100) &&
+                        current.date == old.date && current.note == old.note && current.receiptNo == old.receiptNo
+                },
+                changes = mapOf(
+                    "amount" to com.saif.mosque.data.ledger.LedgerMath.taka(poisha),
+                    "amountPoisha" to poisha,
+                    "accountId" to new.accountId,
+                    "donorId" to new.donorId,
+                    "donorName" to new.donorName.trim(),
+                    "date" to new.date,
+                    "note" to new.note.trim(),
+                    "receiptNo" to new.receiptNo.trim()
+                )
+            )
+        } else {
+            mutate("contributions", "update", mosqueId, old.id, new, old)
+        }
+    }
+
+    suspend fun deleteContribution(mosqueId: String, c: Contribution) {
+        if (isV2Mosque(mosqueId)) {
+            commitOrQueueV2Correction(
+                mosqueId = mosqueId,
+                kind = "contributions",
+                targetId = c.id,
+                action = "delete",
+                verifySnapshot = { snap ->
+                    val current = snap.toObject(Contribution::class.java)
+                    current != null && current.accountId == c.accountId &&
+                        Math.round(current.amount * 100) == Math.round(c.amount * 100)
+                }
+            )
+        } else {
+            mutate("contributions", "delete", mosqueId, c.id, expected = c)
+        }
+    }
+
     suspend fun addExpense(mosqueId: String, e: Expense, userId: String) =
         mutate("expenses", "add", mosqueId, value = e)
-    suspend fun updateExpense(mosqueId: String, old: Expense, new: Expense, userId: String) =
-        mutate("expenses", "update", mosqueId, old.id, new, old)
-    suspend fun deleteExpense(mosqueId: String, e: Expense) =
-        mutate("expenses", "delete", mosqueId, e.id, expected = e)
+
+    suspend fun updateExpense(mosqueId: String, old: Expense, new: Expense, userId: String) {
+        if (isV2Mosque(mosqueId)) {
+            val poisha = com.saif.mosque.data.ledger.LedgerMath.poisha(new.amount, positive = true)
+            commitOrQueueV2Correction(
+                mosqueId = mosqueId,
+                kind = "expenses",
+                targetId = old.id,
+                action = "update",
+                verifySnapshot = { snap ->
+                    val current = snap.toObject(Expense::class.java)
+                    current != null && current.accountId == old.accountId && current.title == old.title &&
+                        Math.round(current.amount * 100) == Math.round(old.amount * 100) &&
+                        current.date == old.date && current.paidTo == old.paidTo &&
+                        current.category == old.category && current.note == old.note && current.receiptNo == old.receiptNo
+                },
+                changes = mapOf(
+                    "amount" to com.saif.mosque.data.ledger.LedgerMath.taka(poisha),
+                    "amountPoisha" to poisha,
+                    "accountId" to new.accountId,
+                    "title" to new.title.trim(),
+                    "category" to new.category.trim(),
+                    "paidTo" to new.paidTo.trim(),
+                    "date" to new.date,
+                    "note" to new.note.trim(),
+                    "receiptNo" to new.receiptNo.trim()
+                )
+            )
+        } else {
+            mutate("expenses", "update", mosqueId, old.id, new, old)
+        }
+    }
+
+    suspend fun deleteExpense(mosqueId: String, e: Expense) {
+        if (isV2Mosque(mosqueId)) {
+            commitOrQueueV2Correction(
+                mosqueId = mosqueId,
+                kind = "expenses",
+                targetId = e.id,
+                action = "delete",
+                verifySnapshot = { snap ->
+                    val current = snap.toObject(Expense::class.java)
+                    current != null && current.accountId == e.accountId &&
+                        Math.round(current.amount * 100) == Math.round(e.amount * 100)
+                }
+            )
+        } else {
+            mutate("expenses", "delete", mosqueId, e.id, expected = e)
+        }
+    }
+
     suspend fun addTransfer(mosqueId: String, t: Transfer, userId: String) =
         mutate("transfers", "add", mosqueId, value = t)
-    suspend fun deleteTransfer(mosqueId: String, t: Transfer) =
-        mutate("transfers", "delete", mosqueId, t.id, expected = t)
+
+    suspend fun deleteTransfer(mosqueId: String, t: Transfer) {
+        if (isV2Mosque(mosqueId)) {
+            commitOrQueueV2Correction(
+                mosqueId = mosqueId,
+                kind = "transfers",
+                targetId = t.id,
+                action = "delete",
+                verifySnapshot = { snap ->
+                    val current = snap.toObject(Transfer::class.java)
+                    current != null && current.fromAccountId == t.fromAccountId &&
+                        current.toAccountId == t.toAccountId &&
+                        Math.round(current.amount * 100) == Math.round(t.amount * 100)
+                }
+            )
+        } else {
+            mutate("transfers", "delete", mosqueId, t.id, expected = t)
+        }
+    }
+
+    /**
+     * Verify the tenant's receipt chain (`ledgerMutations`), voided tombstones, and fund/mosque balance agreement.
+     */
+    suspend fun verifyReceiptChain(mosqueId: String): com.saif.mosque.data.model.ReceiptChainVerification {
+        val mosqueSnap = mosqueRef(mosqueId).get().await()
+        val fundsSnap = coll(mosqueId, "funds").get().await()
+        val contribsSnap = coll(mosqueId, "contributions").get().await()
+        val expensesSnap = coll(mosqueId, "expenses").get().await()
+        val transfersSnap = coll(mosqueId, "transfers").get().await()
+        val mutationsSnap = coll(mosqueId, "ledgerMutations").get().await()
+
+        val issues = mutableListOf<String>()
+        val mutationMap = mutationsSnap.documents.associateBy { it.id }
+        val prevIdsByTarget = mutableMapOf<String, MutableSet<String>>()
+
+        for (doc in mutationsSnap.documents) {
+            val kind = doc.getString("kind") ?: ""
+            val targetId = doc.getString("targetId") ?: ""
+            val before = doc.get("before") as? Map<*, *>
+            val after = doc.get("after") as? Map<*, *>
+            if (before == null || after == null || after["ledgerMutationId"] != doc.id) {
+                issues.add("invalid_receipt:${doc.id}")
+                continue
+            }
+            val prevId = (before["ledgerMutationId"] as? String).orEmpty()
+            if (prevId.isNotEmpty() && !mutationMap.containsKey(prevId)) {
+                issues.add("broken_chain:${doc.id}")
+            }
+            val seen = prevIdsByTarget.getOrPut("$kind/$targetId") { mutableSetOf() }
+            if (!seen.add(prevId)) {
+                issues.add("forked_chain:${doc.id}")
+            }
+        }
+
+        var activeEntries = 0
+        var voidedEntries = 0
+        for ((kind, snap) in listOf(
+            "contributions" to contribsSnap,
+            "expenses" to expensesSnap,
+            "transfers" to transfersSnap
+        )) {
+            for (doc in snap.documents) {
+                val voided = doc.getBoolean("voided") == true
+                if (voided) voidedEntries++ else activeEntries++
+                val mutId = doc.getString("ledgerMutationId").orEmpty()
+                if ((voided || mutId.isNotEmpty()) && !mutationMap.containsKey(mutId)) {
+                    issues.add("missing_receipt:$kind/${doc.id}")
+                }
+            }
+        }
+
+        val mosqueTotalPoisha = mosqueSnap.getLong("totalBalancePoisha")
+            ?: Math.round((mosqueSnap.getDouble("totalBalance") ?: 0.0) * 100L)
+        val fundsSumPoisha = fundsSnap.documents.sumOf {
+            it.getLong("balancePoisha") ?: Math.round((it.getDouble("balance") ?: 0.0) * 100L)
+        }
+        if (mosqueTotalPoisha != fundsSumPoisha) {
+            issues.add("fund_total_mismatch:$mosqueTotalPoisha!=$fundsSumPoisha")
+        }
+
+        return com.saif.mosque.data.model.ReceiptChainVerification(
+            valid = issues.isEmpty(),
+            mutationsCount = mutationsSnap.size(),
+            activeEntriesCount = activeEntries,
+            voidedEntriesCount = voidedEntries,
+            totalBalancePoisha = mosqueTotalPoisha,
+            issues = issues
+        )
+    }
 
     suspend fun updateMember(mosqueId: String, old: AppUser, member: AppUser, editor: AppUser) {
         if (old.id == editor.id && !member.active) throw SelfActionException()
@@ -225,3 +459,4 @@ internal fun callableMap(value: Any): Map<*, *> {
     val gson = com.google.gson.Gson()
     return gson.fromJson(gson.toJson(value), Map::class.java)
 }
+

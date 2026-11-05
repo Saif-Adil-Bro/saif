@@ -77,12 +77,20 @@ class MembersViewModel(
     private val ledger: LedgerRepository,
     private val authRepo: AuthRepository,
     private val mosqueId: String,
-    private val user: AppUser
+    private val user: AppUser,
+    private val invitationOutbox: com.saif.mosque.data.invitations.PrototypeInvitationOutbox? = null,
+    private val invitationService: com.saif.mosque.data.invitations.PrototypeInvitationService? = null,
+    private val appContext: android.content.Context? = null
 ) : ViewModel() {
     val state: StateFlow<UiState<List<AppUser>>> = ledger.observeMembers(mosqueId)
         .map { UiState.Success(it.sortedWith(compareBy({ !it.active }, { it.name }))) as UiState<List<AppUser>> }
         .catch { emit(UiState.Error(it.message ?: "error")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
+
+    val invitations: StateFlow<List<com.saif.mosque.data.invitations.PrototypeQueuedInvitation>> =
+        (invitationOutbox?.observe(user.id, mosqueId) ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+            .catch { emit(emptyList()) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val canEdit = Permissions.canEditMembers(user.role)
 
@@ -99,6 +107,86 @@ class MembersViewModel(
                 else done(if (error is AuthException) Msg.Res(error.resId) else Msg.Res(R.string.error_generic))
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
               catch (_: Exception) { done(Msg.Res(R.string.error_generic)) }
+        }
+    }
+
+    fun issueInvitation(draft: com.saif.mosque.data.invitations.PrototypeInvitation, done: (Msg?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val outbox = invitationOutbox ?: throw IllegalStateException("Invitation outbox unavailable")
+                outbox.enqueue(draft)
+                val service = invitationService
+                if (service != null) {
+                    try {
+                        val status = service.issue(draft)
+                        val next = when (status) {
+                            com.saif.mosque.data.invitations.PrototypeInvitationStatus.PENDING -> "READY"
+                            com.saif.mosque.data.invitations.PrototypeInvitationStatus.ACCEPTED -> "ACCEPTED"
+                            com.saif.mosque.data.invitations.PrototypeInvitationStatus.REVOKED -> "REVOKED"
+                        }
+                        outbox.transition(draft.id, draft.issuerUid, draft.mosqueId, "PENDING", next)
+                        done(null)
+                        _messages.emit(Msg.Res(R.string.saved_ok))
+                        return@launch
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Fall back to background worker sync when offline or transient failure occurs
+                    }
+                }
+                appContext?.let { com.saif.mosque.data.invitations.PrototypeInvitationSync.schedule(it, draft) }
+                done(null)
+                _messages.emit(Msg.Res(R.string.local_pending_saved))
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { done(Msg.Res(R.string.local_save_failed)) }
+        }
+    }
+
+    fun prepareShare(
+        item: com.saif.mosque.data.invitations.PrototypeQueuedInvitation,
+        onReady: (com.saif.mosque.data.invitations.InvitationAddress) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val service = invitationService ?: return@launch
+                when (service.inspect(item.draft)) {
+                    com.saif.mosque.data.invitations.PrototypeInvitationStatus.PENDING ->
+                        onReady(com.saif.mosque.data.invitations.InvitationAddress(item.draft.mosqueId, item.draft.id))
+                    com.saif.mosque.data.invitations.PrototypeInvitationStatus.ACCEPTED -> {
+                        invitationOutbox?.transition(item.draft.id, item.draft.issuerUid, item.draft.mosqueId, item.state, "ACCEPTED")
+                        _messages.emit(Msg.Res(R.string.invitation_status_accepted))
+                    }
+                    com.saif.mosque.data.invitations.PrototypeInvitationStatus.REVOKED -> {
+                        invitationOutbox?.transition(item.draft.id, item.draft.issuerUid, item.draft.mosqueId, item.state, "REVOKED")
+                        _messages.emit(Msg.Res(R.string.invitation_status_revoked))
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { _messages.emit(Msg.Res(R.string.sync_check_permission)) }
+        }
+    }
+
+    fun retryInvitation(item: com.saif.mosque.data.invitations.PrototypeQueuedInvitation) {
+        viewModelScope.launch {
+            try {
+                if (invitationOutbox?.transition(item.draft.id, item.draft.issuerUid, item.draft.mosqueId, "BLOCKED", "PENDING") == true) {
+                    appContext?.let { com.saif.mosque.data.invitations.PrototypeInvitationSync.schedule(it, item.draft) }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { _messages.emit(Msg.Res(R.string.error_generic)) }
+        }
+    }
+
+    fun revokeInvitation(item: com.saif.mosque.data.invitations.PrototypeQueuedInvitation) {
+        viewModelScope.launch {
+            try {
+                invitationService?.revoke(mosqueId, item.draft.id, user.id)
+                if (item.state in setOf("PENDING", "READY")) {
+                    invitationOutbox?.transition(item.draft.id, item.draft.issuerUid, item.draft.mosqueId, item.state, "REVOKED")
+                }
+                _messages.emit(Msg.Res(R.string.invitation_status_revoked))
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { _messages.emit(Msg.Res(R.string.error_generic)) }
         }
     }
 
@@ -142,15 +230,27 @@ fun roleLabel(role: Role): String = when (role) {
 fun MembersScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
     val vm: MembersViewModel = viewModel {
-        MembersViewModel(container.ledgerRepository, container.authRepository, mosqueId, user)
+        MembersViewModel(
+            container.ledgerRepository,
+            container.authRepository,
+            mosqueId,
+            user,
+            container.invitationOutbox,
+            container.invitationService,
+            container.context
+        )
     }
     val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canInvite = vm.canEdit
     val state by vm.state.collectAsStateWithLifecycle()
+    val invitations by vm.invitations.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
 
     var editing by remember { mutableStateOf<AppUser?>(null) }
     var deleting by remember { mutableStateOf<AppUser?>(null) }
+    var inviting by remember { mutableStateOf(false) }
+    var sharingAddress by remember { mutableStateOf<com.saif.mosque.data.invitations.InvitationAddress?>(null) }
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
 
@@ -173,7 +273,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
         StateBox(state) { members ->
-            if (members.isEmpty()) {
+            if (members.isEmpty() && invitations.isEmpty() && !canInvite) {
                 EmptyBox()
             } else {
                 LazyColumn(
@@ -181,6 +281,58 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
+                    if (canInvite) {
+                        item(key = "invite-action-bar") {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AssistChip(
+                                    onClick = { inviting = true; saveError = null },
+                                    label = { Text(stringResource(R.string.invitation_member_title)) }
+                                )
+                            }
+                        }
+                    }
+                    items(invitations, key = { "invite-${it.draft.id}" }) { inv ->
+                        val statusText = when (inv.state) {
+                            "READY" -> stringResource(R.string.invitation_status_ready)
+                            "ACCEPTED" -> stringResource(R.string.invitation_status_accepted)
+                            "REVOKED" -> stringResource(R.string.invitation_status_revoked)
+                            "BLOCKED" -> stringResource(R.string.sync_unconfirmed)
+                            else -> stringResource(R.string.sync_waiting)
+                        }
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(inv.draft.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    listOf(inv.draft.email, roleLabel(inv.draft.role), statusText)
+                                        .filter { it.isNotBlank() }.joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (inv.state == "READY" && !com.saif.mosque.ui.components.LocalOfflineMode.current) {
+                                        AssistChip(
+                                            onClick = { vm.prepareShare(inv) { sharingAddress = it } },
+                                            label = { Text(stringResource(R.string.invitation_share_title)) }
+                                        )
+                                        TextButton(onClick = { vm.revokeInvitation(inv) }) {
+                                            Text(stringResource(R.string.invitation_revoke))
+                                        }
+                                    } else if (inv.state == "BLOCKED") {
+                                        AssistChip(
+                                            onClick = { vm.retryInvitation(inv) },
+                                            label = { Text(stringResource(R.string.retry)) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     items(members, key = { it.id }) { m ->
                         val canManageTarget = canEdit && m.role != Role.SUPERADMIN &&
                             (m.role != Role.ADMIN || user.role == Role.ADMIN || user.role == Role.SUPERADMIN)
@@ -195,6 +347,41 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
                 }
             }
         }
+    }
+
+    if (inviting) {
+        com.saif.mosque.ui.invitations.PrototypeInviteMemberDialog(
+            issuerUid = user.id,
+            mosqueId = mosqueId,
+            issuerRole = user.role,
+            saving = saving,
+            error = saveError,
+            onDismiss = { inviting = false; saveError = null },
+            onSave = { draft ->
+                if (!saving) {
+                    saving = true; saveError = null
+                    vm.issueInvitation(draft) { result ->
+                        saving = false
+                        if (result == null) inviting = false else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    sharingAddress?.let { addr ->
+        com.saif.mosque.ui.invitations.PrototypeInvitationShareDialog(
+            address = addr,
+            onCopy = { code ->
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("invitation", code))
+                sharingAddress = null
+            },
+            onDismiss = { sharingAddress = null }
+        )
     }
 
     editing?.let { target ->

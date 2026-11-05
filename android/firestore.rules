@@ -222,22 +222,248 @@ service cloud.firestore {
         freshOp(m, 'contributions', opId) && op.donorId == id &&
         donorDelta(m, id, opId, op.amountPoisha, op.donorName);
     }
+    // Immutable operation receipts bind every correction to its exact before/after
+    // record and to the matching aggregate changes in this same atomic commit.
+    function mutationPath(m, id) { return /databases/$(database)/documents/mosques/$(m)/ledgerMutations/$(id); }
+    function mutationFresh(m, id) { return validId(id) && !exists(mutationPath(m, id)) && existsAfter(mutationPath(m, id)); }
+    function mutationFundDelta(op, id) {
+      let old = op.before;
+      let next = op.after;
+      let isIncome = op.kind == 'contributions';
+      return op.kind == 'transfers'
+        ? (old.fromAccountId == id ? op.oldAmountPoisha : -op.oldAmountPoisha)
+        : (old.accountId == id ? (isIncome ? -op.oldAmountPoisha : op.oldAmountPoisha) : 0) +
+          (op.action == 'update' && next.accountId == id ? (isIncome ? op.newAmountPoisha : -op.newAmountPoisha) : 0);
+    }
+    function mutationDonorDelta(op, id) {
+      return (op.before.donorId == id ? -op.oldAmountPoisha : 0) +
+        (op.action == 'update' && op.after.donorId == id ? op.newAmountPoisha : 0);
+    }
+    function mutationTotalDelta(op) {
+      return op.kind == 'contributions' ? (op.action == 'update' ? op.newAmountPoisha : 0) - op.oldAmountPoisha :
+        op.kind == 'expenses' ? op.oldAmountPoisha - (op.action == 'update' ? op.newAmountPoisha : 0) : 0;
+    }
+    function mutationFund(m, id, opId, op) {
+      let p = fundPath(m, id);
+      let old = get(p).data;
+      let next = getAfter(p).data;
+      let newFund = op.action == 'update' && op.after.accountId == id && op.before.accountId != id;
+      return old.mosqueId == m && (!newFund || old.active == true) &&
+        money(old.balancePoisha, old.balance) && money(next.balancePoisha, next.balance) &&
+        next.balancePoisha == old.balancePoisha + mutationFundDelta(op, id) &&
+        next.ledgerOpId == opId && next.ledgerOpKind == 'ledgerMutations' &&
+        next.diff(old).affectedKeys().hasOnly(['balance','balancePoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function mutationDonor(m, id, opId, op) {
+      let p = donorPath(m, id);
+      let old = get(p).data;
+      let next = getAfter(p).data;
+      let newDonor = op.action == 'update' && op.after.donorId == id && op.before.donorId != id;
+      return old.mosqueId == m && (!newDonor || old.active == true) &&
+        (op.action != 'update' || op.after.donorId != id || op.after.donorName == old.name) &&
+        money(old.totalDonatedPoisha, old.totalDonated) && money(next.totalDonatedPoisha, next.totalDonated) &&
+        next.totalDonatedPoisha == old.totalDonatedPoisha + mutationDonorDelta(op, id) &&
+        next.ledgerOpId == opId && next.ledgerOpKind == 'ledgerMutations' &&
+        next.diff(old).affectedKeys().hasOnly(['totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function mutationTargetShape(op, m) {
+      let old = op.before;
+      let next = op.after;
+      return old.mosqueId == m && old.get('voided', false) == false && money(op.oldAmountPoisha, old.amount) && op.oldAmountPoisha > 0 &&
+        old.get('amountPoisha', op.oldAmountPoisha) == op.oldAmountPoisha &&
+        (op.kind == 'transfers' ? validId(old.fromAccountId) && validId(old.toAccountId) && old.fromAccountId != old.toAccountId :
+          validId(old.accountId) && (op.kind != 'contributions' || (old.donorId is string && (old.donorId == '' || validId(old.donorId))))) &&
+        (op.action == 'delete' ? next.diff(old).affectedKeys().hasOnly(['voided','ledgerMutationId']) && next.voided == true && op.newAmountPoisha == 0 :
+          op.kind in ['contributions','expenses'] && money(op.newAmountPoisha, next.amount) && op.newAmountPoisha > 0 &&
+          next.amountPoisha == op.newAmountPoisha && next.mosqueId == m && validId(next.accountId) &&
+          next.date is string && next.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$') && text(next.note, false) &&
+          (op.kind == 'contributions' ?
+            next.diff(old).affectedKeys().hasOnly(['amount','amountPoisha','accountId','donorId','donorName','date','note','receiptNo','ledgerMutationId']) &&
+            next.donorId is string && (next.donorId == '' || validId(next.donorId)) && text(next.donorName, true) && text(next.receiptNo, false) :
+            next.diff(old).affectedKeys().hasOnly(['amount','amountPoisha','accountId','title','category','paidTo','date','note','receiptNo','ledgerMutationId']) &&
+            text(next.title, true) && text(next.category, false) && text(next.paidTo, false) && text(next.receiptNo, false)));
+    }
+    function mutationPaired(path, opId) {
+      let old = get(path).data;
+      let next = getAfter(path).data;
+      return old.get('ledgerOpId', '') != opId && next.ledgerOpId == opId && next.ledgerOpKind == 'ledgerMutations';
+    }
+    function mutationCreate(m, opId) {
+      let op = request.resource.data;
+      let target = opPath(m, op.kind, op.targetId);
+      let old = op.before;
+      let next = op.after;
+      return op.keys().hasOnly(['uid','kind','targetId','action','oldAmountPoisha','newAmountPoisha','before','after']) &&
+        op.uid == request.auth.uid && op.kind in ['contributions','expenses','transfers'] && op.action in ['update','delete'] &&
+        validId(op.targetId) && op.before is map && op.after is map && canMoney(m, op.kind) &&
+        exists(target) && get(target).data == old && mutationTargetShape(op, m) &&
+        existsAfter(target) && getAfter(target).data == next && next.ledgerMutationId == opId && old.get('ledgerMutationId', '') != opId &&
+        (op.kind == 'transfers' ?
+          mutationPaired(fundPath(m, old.fromAccountId), opId) && mutationPaired(fundPath(m, old.toAccountId), opId) :
+          mutationPaired(fundPath(m, old.accountId), opId) &&
+          (op.action != 'update' || old.accountId == next.accountId || mutationPaired(fundPath(m, next.accountId), opId)) &&
+          (op.kind != 'contributions' ||
+            ((old.donorId == '' || mutationPaired(donorPath(m, old.donorId), opId)) &&
+             (op.action != 'update' || next.donorId == '' || next.donorId == old.donorId || mutationPaired(donorPath(m, next.donorId), opId))))) &&
+        (mutationTotalDelta(op) == 0 || mutationPaired(mosquePath(m), opId));
+    }
+    function mutationFundUpdate(m, id) {
+      let opId = request.resource.data.ledgerOpId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) &&
+        (op.kind == 'transfers' ? id in [op.before.fromAccountId, op.before.toAccountId] :
+          id == op.before.accountId || (op.action == 'update' && id == op.after.accountId)) && mutationFund(m, id, opId, op);
+    }
+    function mutationDonorUpdate(m, id) {
+      let opId = request.resource.data.ledgerOpId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) && op.kind == 'contributions' &&
+        (id == op.before.donorId || (op.action == 'update' && id == op.after.donorId)) && mutationDonor(m, id, opId, op);
+    }
+    function mutationMosqueUpdate(m) {
+      let opId = request.resource.data.ledgerOpId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) && op.kind in ['contributions','expenses'] && mutationTotalDelta(op) != 0 &&
+        mosqueDelta(m, 'ledgerMutations', opId, mutationTotalDelta(op));
+    }
+    function mutationRecordChange(m, k, id) {
+      let opId = request.resource.data.ledgerMutationId;
+      let op = getAfter(mutationPath(m, opId)).data;
+      return mutationFresh(m, opId) && op.kind == k && op.targetId == id;
+    }
+    // Verified invitation & Spark-compatible onboarding + platform provisioning rules.
+    function invitePath(m, id) { return /databases/$(database)/documents/mosques/$(m)/invitations/$(id); }
+    function claimPath(m, email) { return /databases/$(database)/documents/mosques/$(m)/memberClaims/$(email); }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function validInviteIssuer(m, inv) {
+      let issuer = get(userPath(inv.createdBy)).data;
+      return issuer.active == true &&
+        (issuer.role == 'SUPERADMIN' || (issuer.mosqueId == m &&
+          issuer.role in ['ADMIN','PRESIDENT','SECRETARY'] && (inv.role != 'ADMIN' || issuer.role == 'ADMIN')));
+    }
+    function verifiedInvite(m, id) {
+      let inv = get(invitePath(m, id)).data;
+      return signedIn() && request.auth.token.get('email_verified', false) == true &&
+        request.auth.token.get('email', '') is string &&
+        request.auth.token.email == inv.email && inv.status == 'pending' &&
+        inv.role in ['ADMIN','PRESIDENT','SECRETARY','TREASURER','CASHIER','IMAM','MEMBER'] &&
+        validId(inv.createdBy) && validInviteIssuer(m, inv) &&
+        inv.mosqueId == m && inv.expiresAt is timestamp && request.time < inv.expiresAt;
+    }
+    function inviteCreate(m) {
+      let inv = request.resource.data;
+      return inv.keys().hasOnly(['mosqueId','email','name','phone','role','designation','createdBy','status','expiresAt']) &&
+        inv.keys().hasAll(['mosqueId','email','name','phone','role','designation','createdBy','status','expiresAt']) &&
+        inv.mosqueId == m && canManageMember(m, inv) &&
+        (inv.role != 'ADMIN' || platform() || me().role == 'ADMIN') &&
+        inv.role in ['ADMIN','PRESIDENT','SECRETARY','TREASURER','CASHIER','IMAM','MEMBER'] &&
+        inv.email is string && inv.email.size() > 3 && inv.email.size() <= 254 && inv.email == inv.email.lower() &&
+        inv.email.matches('^[^@/]+@[^@/]+$') &&
+        shortText(inv.name, true) && shortText(inv.phone, false) && shortText(inv.designation, false) &&
+        inv.createdBy == request.auth.uid && inv.status == 'pending' && inv.expiresAt is timestamp &&
+        inv.expiresAt > request.time && inv.expiresAt <= request.time + duration.value(7, 'd');
+    }
+    function inviteAccept(m, id) {
+      let old = resource.data;
+      let next = request.resource.data;
+      let user = userPath(request.auth.uid);
+      return verifiedInvite(m, id) && !exists(user) &&
+        next.diff(old).affectedKeys().hasOnly(['status','acceptedBy']) &&
+        next.status == 'accepted' && next.acceptedBy == request.auth.uid &&
+        existsAfter(user) && getAfter(user).data.inviteId == id && getAfter(user).data.mosqueId == m;
+    }
+    function inviteRevoke(m) {
+      return canManageMember(m, resource.data) && resource.data.status == 'pending' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status == 'revoked';
+    }
+    function inviteProfileCreate(uid) {
+      let profile = request.resource.data;
+      let m = profile.mosqueId;
+      let id = profile.inviteId;
+      let invite = invitePath(m, id);
+      let parent = mosquePath(m);
+      let inv = get(invite).data;
+      let claim = claimPath(m, profile.email);
+      return request.auth != null && uid == request.auth.uid &&
+        profile.keys().hasOnly(['name','email','phone','role','mosqueId','designation','active','createdAt','inviteId']) &&
+        profile.keys().hasAll(['name','email','phone','role','mosqueId','designation','active','createdAt','inviteId']) &&
+        validId(m) && validId(id) && verifiedInvite(m, id) &&
+        profile.name == inv.name && profile.email == inv.email && profile.phone == inv.phone &&
+        profile.role == inv.role && profile.designation == inv.designation && profile.active == true && profile.createdAt is int &&
+        get(parent).data.active == true && get(parent).data.memberCount is int &&
+        getAfter(invite).data.status == 'accepted' && getAfter(invite).data.acceptedBy == uid &&
+        !exists(claim) && getAfter(claim).data.uid == uid && getAfter(claim).data.inviteId == id &&
+        getAfter(parent).data.memberOpId == uid && getAfter(parent).data.memberCount == get(parent).data.memberCount + 1;
+    }
+    function memberClaimCreate(m, email) {
+      let claim = request.resource.data;
+      let uid = request.auth.uid;
+      let user = userPath(uid);
+      return signedIn() && claim.keys().hasOnly(['uid','inviteId']) && claim.keys().hasAll(['uid','inviteId']) &&
+        claim.uid == uid && validId(claim.inviteId) && verifiedInvite(m, claim.inviteId) &&
+        get(invitePath(m, claim.inviteId)).data.email == email && !exists(user) && existsAfter(user) &&
+        getAfter(user).data.inviteId == claim.inviteId && getAfter(user).data.mosqueId == m &&
+        getAfter(invitePath(m, claim.inviteId)).data.status == 'accepted';
+    }
+    function memberCounterInvite(m) {
+      let next = request.resource.data;
+      let uid = request.auth.uid;
+      let user = userPath(uid);
+      return signedIn() && next.diff(resource.data).affectedKeys().hasOnly(['memberCount','memberOpId']) &&
+        next.memberOpId == uid && resource.data.active == true && resource.data.memberCount is int &&
+        next.memberCount == resource.data.memberCount + 1 && !exists(user) && existsAfter(user) &&
+        getAfter(user).data.mosqueId == m;
+    }
+    function mosqueCreate(mosqueId) {
+      let m = request.resource.data;
+      let adminUid = m.firstAdminUid;
+      let adminUser = userPath(adminUid);
+      return platform() && validId(mosqueId) && validId(adminUid) &&
+        m.keys().hasOnly(['name','nameEn','address','district','upazila','phone','email','establishedYear','registrationNo','active','createdAt','totalBalance','totalBalancePoisha','ledgerVersion','memberCount','fundCount','donorCount','firstAdminUid']) &&
+        m.keys().hasAll(['name','active','createdAt','totalBalance','totalBalancePoisha','ledgerVersion','memberCount','fundCount','donorCount','firstAdminUid']) &&
+        shortText(m.name, true) && shortText(m.get('nameEn', ''), false) && shortText(m.get('address', ''), false) &&
+        shortText(m.get('district', ''), false) && shortText(m.get('upazila', ''), false) &&
+        shortText(m.phone, false) && shortText(m.email, false) &&
+        (!m.keys().hasAny(['establishedYear']) || m.establishedYear == null || (m.establishedYear is int && m.establishedYear >= 1900 && m.establishedYear <= 2100) || shortText(m.establishedYear, false)) &&
+        shortText(m.get('registrationNo', ''), false) &&
+        m.active == true && m.createdAt is int &&
+        m.totalBalance == 0 && m.totalBalancePoisha == 0 && m.ledgerVersion == 2 &&
+        m.memberCount == 1 && m.fundCount == 0 && m.donorCount == 0 &&
+        !exists(adminUser) && existsAfter(adminUser) &&
+        getAfter(adminUser).data.mosqueId == mosqueId && getAfter(adminUser).data.role == 'ADMIN' &&
+        getAfter(adminUser).data.active == true;
+    }
+    function platformAdminCreate(uid) {
+      let u = request.resource.data;
+      let m = u.mosqueId;
+      let mosque = mosquePath(m);
+      return platform() && validId(uid) && validId(m) &&
+        u.keys().hasOnly(['name','email','phone','role','mosqueId','designation','active','createdAt']) &&
+        u.keys().hasAll(['name','email','phone','role','mosqueId','designation','active','createdAt']) &&
+        shortText(u.name, true) && shortText(u.phone, false) && shortText(u.designation, false) &&
+        u.email is string && u.email.size() > 3 && u.email.size() <= 254 && u.email == u.email.lower() &&
+        u.email.matches('^[^@/]+@[^@/]+$') &&
+        u.role == 'ADMIN' && u.active == true && u.createdAt is int &&
+        !exists(mosque) && existsAfter(mosque) && getAfter(mosque).data.firstAdminUid == uid;
+    }
     match /users/{uid} {
       // Self-read permits login to report an inactive profile; tenant queries must
       // constrain mosqueId and cannot read profiles from a different tenant.
       allow read: if signedIn() && (request.auth.uid == uid || platform() || activeTenant(resource.data.mosqueId));
-      // Creation still requires the trusted provisioning workflow.
-      allow create: if false;
+      allow create: if inviteProfileCreate(uid) || platformAdminCreate(uid);
       allow update: if signedIn() && memberUpdate(uid);
       allow delete: if signedIn() && memberDelete(uid);
     }
     match /mosques/{mosqueId} {
       // Members may read their own inactive mosque to receive the correct login error.
       allow read: if platform() || sameTenant(mosqueId);
-      allow create, delete: if false;
+      allow create: if mosqueCreate(mosqueId);
+      allow delete: if false;
       allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind'])
-        ? mosqueUpdate(mosqueId)
-        : ((platform() && resource.data.get('ledgerMigration', '') != 'frozen'
+        ? (request.resource.data.ledgerOpKind == 'ledgerMutations' ? mutationMosqueUpdate(mosqueId) : mosqueUpdate(mosqueId))
+        : ((request.resource.data.diff(resource.data).affectedKeys().hasAny(['memberCount','memberOpId']) && memberCounterInvite(mosqueId))
+        || (platform() && resource.data.get('ledgerMigration', '') != 'frozen'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
           'establishedYear', 'registrationNo', 'active'
@@ -247,16 +473,36 @@ service cloud.firestore {
         && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
         || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
         || memberCounterDelete(mosqueId));
+      match /memberClaims/{email} {
+        allow get: if signedIn() && ((request.auth.token.get('email_verified', false) == true &&
+          request.auth.token.get('email', '') == email) || canDirectory(mosqueId, 'funds'));
+        allow list: if canDirectory(mosqueId, 'funds');
+        allow create: if memberClaimCreate(mosqueId, email);
+        allow update, delete: if false;
+      }
+      match /invitations/{id} {
+        allow get: if (signedIn() && request.auth.token.get('email_verified', false) == true &&
+          request.auth.token.get('email', '') is string && request.auth.token.email == resource.data.email)
+          || canManageMember(mosqueId, resource.data);
+        allow list: if canManageMember(mosqueId, resource.data);
+        allow create: if inviteCreate(mosqueId);
+        allow update: if inviteAccept(mosqueId, id) || inviteRevoke(mosqueId);
+        allow delete: if false;
+      }
       match /{collection}/{doc} {
-        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts']
+        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts', 'ledgerMutations']
           && (platform() || activeTenant(mosqueId));
         allow create: if (collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc))
           || (collection == 'syncReceipts' && receiptCreate(mosqueId, doc))
-          || (collection in ['contributions', 'expenses', 'transfers'] && createLedger(mosqueId, collection, doc));
-        allow update: if collection in ['funds', 'donors'] &&
+          || (collection in ['contributions', 'expenses', 'transfers'] && createLedger(mosqueId, collection, doc))
+          || (collection == 'ledgerMutations' && mutationCreate(mosqueId, doc));
+        allow update: if (collection in ['funds', 'donors'] &&
           (request.resource.data.diff(resource.data).affectedKeys().hasAny(['balance','balancePoisha','totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind'])
-            ? (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc))
-            : directoryUpdate(mosqueId, collection, doc));
+            ? (request.resource.data.ledgerOpKind == 'ledgerMutations'
+                ? (collection == 'funds' ? mutationFundUpdate(mosqueId, doc) : mutationDonorUpdate(mosqueId, doc))
+                : (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc)))
+            : directoryUpdate(mosqueId, collection, doc)))
+          || (collection in ['contributions','expenses','transfers'] && mutationRecordChange(mosqueId, collection, doc));
         allow delete: if false;
       }
     }

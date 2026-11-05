@@ -253,4 +253,16 @@
     <string name="invitation_member_help">প্রথমে আমন্ত্রণ সংরক্ষিত হবে। সার্ভার নিশ্চিত করলে তবেই কোড পাঠান। সদস্য নিজেই পাসওয়ার্ড তৈরি করবেন।</string>
     <string name="invitation_expiry_help">এই খসড়া তৈরির ছয় দিন পর মেয়াদ শেষ হবে। ডিভাইসের সময় ভুল হলে সিঙ্ক নাও হতে পারে।</string>
     <string name="invitation_field_too_long">এই ঘরের লেখা অনেক বড়।</string>
+    <string name="invitation_revoke">বাতিল</string>
+    <string name="invitation_status_ready">নিশ্চিত · কোড পাঠানোর জন্য প্রস্তুত</string>
+    <string name="invitation_status_accepted">গৃহীত</string>
+    <string name="invitation_status_revoked">বাতিলকৃত</string>
+    <string name="audit_trail_title">অডিট ট্রেইল ও রসিদ যাচাই</string>
+    <string name="audit_verify_button">রসিদ চেইন যাচাই করুন</string>
+    <string name="audit_verified_ok">রসিদ চেইন ও ব্যালেন্স যাচাই সফল</string>
+    <string name="audit_verified_failed">রসিদ চেইনে গরমিল পাওয়া গেছে</string>
+    <string name="audit_mutations_count">সংশোধনী রসিদ: %1$d</string>
+    <string name="audit_active_voided">সক্রিয় এন্ট্রি: %1$d · বাতিলকৃত: %2$d</string>
+    <string name="audit_action_update">সংশোধিত</string>
+    <string name="audit_action_delete">বাতিলকৃত</string>
 </resources>

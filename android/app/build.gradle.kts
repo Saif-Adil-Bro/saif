@@ -9,22 +9,46 @@ android {
     namespace = "com.saif.mosque"
     compileSdk = 35
 
+    val releaseKeystorePath = (project.findProperty("KEYSTORE_FILE") as String?)
+        ?: System.getenv("KEYSTORE_FILE")
+    val releaseKeystorePassword = (project.findProperty("KEYSTORE_PASSWORD") as String?)
+        ?: System.getenv("KEYSTORE_PASSWORD")
+    val releaseKeyAlias = (project.findProperty("KEY_ALIAS") as String?)
+        ?: System.getenv("KEY_ALIAS")
+    val releaseKeyPassword = (project.findProperty("KEY_PASSWORD") as String?)
+        ?: System.getenv("KEY_PASSWORD")
+
     defaultConfig {
         applicationId = "com.saif.mosque"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ((project.findProperty("VERSION_CODE") as String?) ?: System.getenv("VERSION_CODE"))?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("VERSION_NAME") as String?) ?: System.getenv("VERSION_NAME") ?: "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables { useSupportLibrary = true }
         resourceConfigurations += listOf("bn", "en")
     }
 
+    signingConfigs {
+        if (!releaseKeystorePath.isNullOrBlank() && !releaseKeystorePassword.isNullOrBlank() &&
+            !releaseKeyAlias.isNullOrBlank() && !releaseKeyPassword.isNullOrBlank() &&
+            file(releaseKeystorePath).exists()
+        ) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

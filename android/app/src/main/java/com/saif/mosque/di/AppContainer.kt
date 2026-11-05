@@ -28,7 +28,19 @@ class AppContainer(val context: Context) {
     }
 
     val authRepository = AuthRepository(auth, db, session)
-    val platformRepository = PlatformRepository(db)
-    val ledgerRepository = LedgerRepository(db, session)
+    val platformRepository = PlatformRepository(db, context)
+    val ledgerRepository = LedgerRepository(db, session, context, auth)
     val dashboardRepository = DashboardRepository(db, session)
+
+    val invitationOutbox by lazy { com.saif.mosque.data.invitations.PrototypeInvitationOutbox.get(context) }
+    val invitationService by lazy { com.saif.mosque.data.invitations.PrototypeInvitationService(db, auth) }
+    val joinCoordinator by lazy {
+        val onboardingApp = com.saif.mosque.data.invitations.PrototypeOnboardingEnvironment.get(context)
+        val onboardingSession = com.saif.mosque.data.invitations.prototypeOnboardingSession(onboardingApp)
+        com.saif.mosque.data.invitations.PrototypeJoinCoordinator(
+            com.saif.mosque.data.invitations.PrototypeJoinFirebaseGateway(onboardingSession),
+            com.saif.mosque.data.invitations.PrototypeJoinPreferences(context)
+        )
+    }
 }
+

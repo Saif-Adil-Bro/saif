@@ -6,7 +6,7 @@ import {initializeTestEnvironment,assertFails,assertSucceeds} from '@firebase/ru
 import {Timestamp,doc,getDoc,setDoc,updateDoc,writeBatch,increment} from 'firebase/firestore';
 let env;
 before(async()=>{if(!process.env.FIRESTORE_EMULATOR_HOST) throw Error('Emulator required');
- env=await initializeTestEnvironment({projectId:'demo-mosque-rules',firestore:{rules:readFileSync(new URL('./member-invite-prototype.rules',import.meta.url),'utf8')}})});
+ env=await initializeTestEnvironment({projectId:'demo-mosque-rules',firestore:{rules:readFileSync(new URL(process.env.LEDGER_INTEGRATED?'../firestore.rules':'./member-invite-prototype.rules',import.meta.url),'utf8')}})});
 beforeEach(async()=>{await env.clearFirestore();await env.withSecurityRulesDisabled(async ctx=>{
  const b=writeBatch(ctx.firestore());
  for(const [id,role,m] of [['admin','ADMIN','m'],['secretary','SECRETARY','m'],['cashier','CASHIER','m'],['other','ADMIN','other']])

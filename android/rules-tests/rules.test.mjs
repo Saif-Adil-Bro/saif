@@ -294,3 +294,32 @@ test('platform cannot reactivate or modify a frozen tenant during ledger migrati
   await assertFails(updateDoc(doc(db, 'mosques/a'), {name:'Edited during migration'}));
   await assertFails(updateDoc(doc(db, 'mosques/a'), {ledgerMigration:'complete'}));
 });
+
+test('platform admin can atomically provision a new v2 mosque and its first admin, and non-atomic or non-platform attempts fail', async () => {
+  const platformDb = dbFor('platform');
+  const mosqueDoc = {
+    name: 'নতুন মসজিদ', nameEn: 'New Mosque', address: 'Dhaka', district: 'Dhaka',
+    upazila: 'Savar', phone: '01711223344', email: 'mosque@example.test',
+    establishedYear: '2026', registrationNo: 'REG-1', active: true, createdAt: 1000,
+    totalBalance: 0, totalBalancePoisha: 0, ledgerVersion: 2,
+    memberCount: 1, fundCount: 0, donorCount: 0, firstAdminUid: 'new-admin-1'
+  };
+  const adminDoc = {
+    name: 'প্রথম অ্যাডমিন', email: 'firstadmin@example.test', phone: '01711223344',
+    role: 'ADMIN', mosqueId: 'mosque-new-1', designation: 'প্রশাসক', active: true, createdAt: 1000
+  };
+  await assertFails(setDoc(doc(platformDb, 'mosques/mosque-new-1'), mosqueDoc));
+  await assertFails(setDoc(doc(platformDb, 'users/new-admin-1'), adminDoc));
+  const tenantBatch = writeBatch(dbFor('admin-a'));
+  tenantBatch.set(doc(dbFor('admin-a'), 'mosques/mosque-new-1'), mosqueDoc);
+  tenantBatch.set(doc(dbFor('admin-a'), 'users/new-admin-1'), adminDoc);
+  await assertFails(tenantBatch.commit());
+
+  const okBatch = writeBatch(platformDb);
+  okBatch.set(doc(platformDb, 'mosques/mosque-new-1'), mosqueDoc);
+  okBatch.set(doc(platformDb, 'users/new-admin-1'), adminDoc);
+  await assertSucceeds(okBatch.commit());
+  assert.equal((await getDoc(doc(platformDb, 'mosques/mosque-new-1'))).data().ledgerVersion, 2);
+  assert.equal((await getDoc(doc(platformDb, 'users/new-admin-1'))).data().role, 'ADMIN');
+});
+

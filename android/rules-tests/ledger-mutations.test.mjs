@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {initializeTestEnvironment,assertFails,assertSucceeds} from '@firebase/rules-unit-testing';
 import {doc,getDoc,setDoc,updateDoc,writeBatch} from 'firebase/firestore';
 let env;
-before(async()=>{if(!process.env.FIRESTORE_EMULATOR_HOST) throw Error('Emulator required'); env=await initializeTestEnvironment({projectId:'demo-mosque-rules',firestore:{rules:readFileSync(new URL('./ledger-corrections-prototype.rules',import.meta.url),'utf8')}})});
+before(async()=>{if(!process.env.FIRESTORE_EMULATOR_HOST) throw Error('Emulator required'); env=await initializeTestEnvironment({projectId:'demo-mosque-rules',firestore:{rules:readFileSync(new URL(process.env.LEDGER_INTEGRATED?'../firestore.rules':'./ledger-corrections-prototype.rules',import.meta.url),'utf8')}})});
 beforeEach(async()=>{await env.clearFirestore();await env.withSecurityRulesDisabled(async ctx=>{
  const db=ctx.firestore(), b=writeBatch(db);
  const put=(path,data)=>b.set(doc(db,path),data);

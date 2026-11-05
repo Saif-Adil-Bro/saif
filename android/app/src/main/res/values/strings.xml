@@ -283,4 +283,16 @@
     <string name="invitation_member_help">The invitation is saved first. Share its code only after the server confirms it. The member creates their own password.</string>
     <string name="invitation_expiry_help">Expires six days after creating this draft. An incorrect device clock can prevent sync.</string>
     <string name="invitation_field_too_long">This field is too long.</string>
+    <string name="invitation_revoke">Revoke</string>
+    <string name="invitation_status_ready">Confirmed · Ready to share</string>
+    <string name="invitation_status_accepted">Accepted</string>
+    <string name="invitation_status_revoked">Revoked</string>
+    <string name="audit_trail_title">Audit trail &amp; receipt verification</string>
+    <string name="audit_verify_button">Verify receipt chain</string>
+    <string name="audit_verified_ok">Receipt chain &amp; balances verified</string>
+    <string name="audit_verified_failed">Discrepancies found in receipt chain</string>
+    <string name="audit_mutations_count">Mutation receipts: %1$d</string>
+    <string name="audit_active_voided">Active entries: %1$d · Voided: %2$d</string>
+    <string name="audit_action_update">Edited</string>
+    <string name="audit_action_delete">Voided</string>
 </resources>

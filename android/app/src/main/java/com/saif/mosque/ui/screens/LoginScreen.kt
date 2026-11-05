@@ -91,6 +91,9 @@ fun LoginScreen(authVm: AuthViewModel, isWideScreen: Boolean) {
         authVm.login(email, password)
     }
 
+    val container = com.saif.mosque.di.LocalContainer.current
+    var showJoinFlow by remember { mutableStateOf(false) }
+
     val effectiveLock = if (authVm.loginLockedEmail == email.trim().lowercase()) authVm.loginLockedUntilMs else null
     val locked = effectiveLock != null && effectiveLock > now
     val lockMinutes = effectiveLock?.let { ((it - now) / 60000).toInt().coerceAtLeast(1) } ?: 0
@@ -103,14 +106,23 @@ fun LoginScreen(authVm: AuthViewModel, isWideScreen: Boolean) {
                 LoginForm(Modifier.weight(1f).fillMaxSize().imePadding(), showBanner = false,
                     email = email, onEmail = { email = it }, password = password, onPassword = { password = it },
                     emailError = emailError, passwordError = passwordError,
-                    busy = busy, locked = locked, lockMinutes = lockMinutes, onSubmit = { submit() })
+                    busy = busy, locked = locked, lockMinutes = lockMinutes,
+                    onSubmit = { submit() }, onJoinWithInvite = { showJoinFlow = true })
             }
         } else {
             LoginForm(Modifier.fillMaxSize().padding(inner).imePadding(), showBanner = true,
                 email = email, onEmail = { email = it }, password = password, onPassword = { password = it },
                 emailError = emailError, passwordError = passwordError,
-                busy = busy, locked = locked, lockMinutes = lockMinutes, onSubmit = { submit() })
+                busy = busy, locked = locked, lockMinutes = lockMinutes,
+                onSubmit = { submit() }, onJoinWithInvite = { showJoinFlow = true })
         }
+    }
+
+    if (showJoinFlow) {
+        com.saif.mosque.ui.invitations.PrototypeJoinFlow(
+            coordinator = container.joinCoordinator,
+            onClose = { showJoinFlow = false }
+        )
     }
 }
 
@@ -140,7 +152,9 @@ private fun LoginForm(
     email: String, onEmail: (String) -> Unit,
     password: String, onPassword: (String) -> Unit,
     emailError: String?, passwordError: String?,
-    busy: Boolean, locked: Boolean, lockMinutes: Int, onSubmit: () -> Unit
+    busy: Boolean, locked: Boolean, lockMinutes: Int,
+    onSubmit: () -> Unit,
+    onJoinWithInvite: () -> Unit = {}
 ) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Column(Modifier.widthIn(max = 480.dp).fillMaxWidth()
@@ -166,6 +180,11 @@ private fun LoginForm(
                         modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 52.dp),
                         shape = MaterialTheme.shapes.medium) {
                         Text(stringResource(if (busy) R.string.signing_in else R.string.sign_in))
+                    }
+                    OutlinedButton(onClick = onJoinWithInvite, enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp),
+                        shape = MaterialTheme.shapes.medium) {
+                        Text(stringResource(R.string.invitation_join_title))
                     }
                 }
             }

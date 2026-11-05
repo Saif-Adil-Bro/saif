@@ -31,15 +31,15 @@ npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config
 
 python3 scripts/assert-android-test-executed.py com.saif.mosque.data.ledger.PrototypeLedgerIntegrationTest
 
-# A third, isolated run exercises the non-deployable correction prototype.
-node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:"rules-tests/ledger-corrections-prototype.rules"},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
+# A third run exercises ledger corrections against production firestore.rules.
+node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:"firestore.rules"},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
 npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config "$CONFIG" --only auth,firestore \
   'node scripts/seed-correction-emulator.cjs && bash -o pipefail -c "gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.saif.mosque.data.ledger.PrototypeCorrectionIntegrationTest 2>&1 | tee /tmp/ledger-correction-test.log"'
 
 python3 scripts/assert-android-test-executed.py com.saif.mosque.data.ledger.PrototypeCorrectionIntegrationTest
 
-# Isolated rules and Auth fixture for the invitation client; never deploy it.
-node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:"rules-tests/member-invite-prototype.rules"},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
+# A fourth run exercises member invitations against production firestore.rules.
+node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:"firestore.rules"},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
 npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config "$CONFIG" --only auth,firestore \
   'node scripts/seed-invitation-emulator.cjs && bash -o pipefail -c "gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.saif.mosque.data.invitations.PrototypeInvitationIntegrationTest 2>&1 | tee /tmp/member-invitation-test.log"'
 

@@ -66,7 +66,8 @@ class PrototypeInvitationOutbox internal constructor(context: Context, name: Str
     fun observe(uid: String, mosqueId: String): Flow<List<PrototypeQueuedInvitation>> = changed.map { list(uid, mosqueId) }
     internal suspend fun transition(id: String, uid: String, mosqueId: String, from: String, to: String, failure: String? = null): Boolean = withContext(Dispatchers.IO) {
         require((from == "BLOCKED" && to == "PENDING") ||
-            (from == "PENDING" && to in setOf("BLOCKED", "READY", "ACCEPTED", "REVOKED")))
+            (from == "PENDING" && to in setOf("BLOCKED", "READY", "ACCEPTED", "REVOKED")) ||
+            (from == "READY" && to in setOf("ACCEPTED", "REVOKED")))
         val count = writableDatabase.update("invites", ContentValues().apply { put("state", to); put("failure", failure) },
             "id = ? AND uid = ? AND mosque_id = ? AND state = ?", arrayOf(id, uid, mosqueId, from))
         if (count > 0) changed.update { it + 1 }

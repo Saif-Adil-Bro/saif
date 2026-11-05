@@ -147,3 +147,26 @@ data class CreatedMosque(
     val adminEmail: String,
     val temporaryPassword: String
 )
+
+/** /mosques/{id}/ledgerMutations/{opId} — immutable correction or void receipt. */
+data class LedgerMutation(
+    @DocumentId val id: String = "",
+    val uid: String = "",
+    val kind: String = "",
+    val targetId: String = "",
+    val action: String = "",
+    val oldAmountPoisha: Long = 0L,
+    val newAmountPoisha: Long = 0L,
+    val before: Map<String, Any> = emptyMap(),
+    val after: Map<String, Any> = emptyMap()
+)
+
+data class ReceiptChainVerification(
+    val valid: Boolean,
+    val mutationsCount: Int,
+    val activeEntriesCount: Int,
+    val voidedEntriesCount: Int,
+    val totalBalancePoisha: Long,
+    val issues: List<String> = emptyList()
+)
+

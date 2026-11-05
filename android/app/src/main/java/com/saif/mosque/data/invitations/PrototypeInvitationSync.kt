@@ -45,6 +45,9 @@ object PrototypeInvitationSync {
         PrototypeInvitationOutbox.get(context).list(uid).filter { it.state == "PENDING" }.forEach { schedule(context, it.draft) }
         scheduleRecovery(context)
     }
+    suspend fun schedulePending(context: Context, uid: String, mosqueId: String? = null) {
+        recover(context, uid)
+    }
 }
 
 class PrototypeInvitationQueue(private val context: Context, private val auth: FirebaseAuth) {

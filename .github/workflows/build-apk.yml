@@ -35,7 +35,7 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm test
-          node --test ../scripts/audit-ledger.test.mjs ../scripts/migrate-ledger.test.mjs
+          node --test ../scripts/audit-ledger.test.mjs ../scripts/migrate-ledger.test.mjs ../scripts/backup-restore-mosque.test.mjs
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -79,12 +79,12 @@ jobs:
         with:
           gradle-version: 8.10.2
 
-      - name: Build debug APK
+      - name: Build debug & release APKs
         id: build
         working-directory: android
         run: |
           set -o pipefail
-          if gradle --no-daemon --console=plain testDebugUnitTest assembleDebug assembleDebugAndroidTest 2>&1 | tee /tmp/build.log; then
+          if gradle --no-daemon --console=plain testDebugUnitTest assembleDebug assembleRelease assembleDebugAndroidTest 2>&1 | tee /tmp/build.log; then
             echo "err=" >> "$GITHUB_OUTPUT"
           else
             # capture the first compile/config error lines so they surface in the
@@ -121,7 +121,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mosque-hisab-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release.apk
           retention-days: 14
 
   firestore-rules:

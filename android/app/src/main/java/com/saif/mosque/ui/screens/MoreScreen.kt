@@ -49,6 +49,7 @@ import com.saif.mosque.ui.viewmodel.AuthViewModel
 @Composable
 fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthViewModel, user: AppUser) {
     var confirmLogout by remember { mutableStateOf(false) }
+    var showAudit by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
@@ -76,14 +77,116 @@ fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthView
         item { MenuCard(stringResource(R.string.members), Icons.Filled.Groups) { nav.navigate(Screen.Members.route) } }
         item { MenuCard(stringResource(R.string.transfers), Icons.Filled.SwapHoriz) { nav.navigate(Screen.Transfers.route) } }
         item { MenuCard(stringResource(R.string.reports), Icons.Filled.Assignment) { nav.navigate(Screen.Reports.route) } }
+        if (user.mosqueId != null) {
+            item { MenuCard(stringResource(R.string.audit_trail_title), Icons.Filled.Assignment) { showAudit = true } }
+        }
         item {
             MenuCard(stringResource(R.string.logout), Icons.Filled.Logout, destructive = true) { confirmLogout = true }
         }
+    }
+    if (showAudit && user.mosqueId != null) {
+        AuditTrailDialog(container = container, mosqueId = user.mosqueId, onDismiss = { showAudit = false })
     }
     if (confirmLogout) ConfirmDialog(
         title = stringResource(R.string.logout), message = stringResource(R.string.log_out_confirm),
         onConfirm = { authVm.logout() }, onDismiss = { confirmLogout = false },
         confirmLabel = stringResource(R.string.logout))
+}
+
+@Composable
+private fun AuditTrailDialog(container: AppContainer, mosqueId: String, onDismiss: () -> Unit) {
+    val mutationsFlow = remember(mosqueId) { container.ledgerRepository.observeLedgerMutations(mosqueId) }
+    val mutations by androidx.lifecycle.compose.collectAsStateWithLifecycle(mutationsFlow, initialValue = emptyList())
+    var verification by remember { mutableStateOf<com.saif.mosque.data.model.ReceiptChainVerification?>(null) }
+    var verifying by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    fun runVerify() {
+        if (verifying) return
+        verifying = true
+        scope.launch {
+            try {
+                verification = container.ledgerRepository.verifyReceiptChain(mosqueId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                verification = com.saif.mosque.data.model.ReceiptChainVerification(
+                    valid = false,
+                    mutationsCount = mutations.size,
+                    activeEntriesCount = 0,
+                    voidedEntriesCount = 0,
+                    totalBalancePoisha = 0L,
+                    issues = listOf(e.message ?: "Verification error")
+                )
+            } finally {
+                verifying = false
+            }
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(mosqueId) {
+        runVerify()
+    }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.audit_trail_title)) },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().then(
+                    with(androidx.compose.foundation.rememberScrollState()) {
+                        androidx.compose.foundation.verticalScroll(this)
+                    }
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                verification?.let { v ->
+                    val statusColor = if (v.valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    Text(
+                        stringResource(if (v.valid) R.string.audit_verified_ok else R.string.audit_verified_failed),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = statusColor
+                    )
+                    Text(
+                        stringResource(R.string.audit_mutations_count, v.mutationsCount),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        stringResource(R.string.audit_active_voided, v.activeEntriesCount, v.voidedEntriesCount),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    v.issues.forEach { issue ->
+                        Text(issue, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                mutations.take(25).forEach { m ->
+                    val actionLabel = if (m.action == "delete") stringResource(R.string.audit_action_delete)
+                    else stringResource(R.string.audit_action_update)
+                    val oldTaka = com.saif.mosque.util.Format.taka(m.oldAmountPoisha / 100.0)
+                    val newTaka = com.saif.mosque.util.Format.taka(m.newAmountPoisha / 100.0)
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("$actionLabel · ${m.kind} (${m.targetId.take(8)})", style = MaterialTheme.typography.labelLarge)
+                            Text("$oldTaka → $newTaka", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = !verifying, onClick = { runVerify() }) {
+                Text(stringResource(R.string.audit_verify_button))
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
 }
 
 @Composable
