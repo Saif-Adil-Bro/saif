@@ -282,4 +282,5 @@
     <string name="invitation_member_title">Invite member</string>
     <string name="invitation_member_help">The invitation is saved first. Share its code only after the server confirms it. The member creates their own password.</string>
     <string name="invitation_expiry_help">Expires six days after creating this draft. An incorrect device clock can prevent sync.</string>
+    <string name="invitation_field_too_long">This field is too long.</string>
 </resources>

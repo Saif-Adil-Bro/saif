@@ -38,14 +38,14 @@ class PrototypeInviteMemberDialogTest {
             }) }
         }
         compose.onNodeWithText(context.getString(R.string.password)).assertDoesNotExist()
-        compose.onNodeWithText(context.getString(R.string.name)).performTextInput("Member")
+        compose.onNodeWithText(context.getString(R.string.name)).performTextInput("Example Name")
         compose.onNodeWithText(context.getString(R.string.email)).performTextInput("member@example.test")
         compose.onNodeWithText(context.getString(R.string.save)).performClick()
         compose.runOnIdle { assertNotNull(first); saving = true }
         compose.onNodeWithText(context.getString(R.string.saving)).assertIsNotEnabled()
-        compose.onNodeWithText("Member").assertIsNotEnabled()
+        compose.onNodeWithText("Example Name").assertIsNotEnabled()
         compose.runOnIdle { saving = false; error = "Not confirmed" }
-        compose.onNodeWithText("Member").assertExists()
+        compose.onNodeWithText("Example Name").assertExists()
         compose.onNodeWithText("Not confirmed").assertExists()
         compose.onNodeWithText(context.getString(R.string.save)).performClick()
         compose.runOnIdle { assertEquals(first, second) }

@@ -36,17 +36,19 @@ internal fun PrototypeInviteMemberDialog(
     issuerUid: String, mosqueId: String, issuerRole: Role, saving: Boolean, error: String?,
     onDismiss: () -> Unit, onSave: (PrototypeInvitation) -> Unit
 ) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var email by rememberSaveable { mutableStateOf("") }
-    var phone by rememberSaveable { mutableStateOf("") }
-    var designation by rememberSaveable { mutableStateOf("") }
-    var roleName by rememberSaveable { mutableStateOf(Role.MEMBER.name) }
-    var attempted by rememberSaveable { mutableStateOf(false) }
+    var name by rememberSaveable(issuerUid, mosqueId) { mutableStateOf("") }
+    var email by rememberSaveable(issuerUid, mosqueId) { mutableStateOf("") }
+    var phone by rememberSaveable(issuerUid, mosqueId) { mutableStateOf("") }
+    var designation by rememberSaveable(issuerUid, mosqueId) { mutableStateOf("") }
+    var roleName by rememberSaveable(issuerUid, mosqueId) { mutableStateOf(Role.MEMBER.name) }
+    var attempted by rememberSaveable(issuerUid, mosqueId) { mutableStateOf(false) }
     // The exact immutable ID and expiry survive configuration changes and retries.
-    val id by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
-    val expiresAt by rememberSaveable { mutableStateOf(System.currentTimeMillis() + 6L * 24 * 60 * 60 * 1000) }
+    val id by rememberSaveable(issuerUid, mosqueId) { mutableStateOf(UUID.randomUUID().toString()) }
+    val expiresAt by rememberSaveable(issuerUid, mosqueId) { mutableStateOf(System.currentTimeMillis() + 6L * 24 * 60 * 60 * 1000) }
     val allowedRoles = listOf(Role.ADMIN, Role.PRESIDENT, Role.SECRETARY, Role.TREASURER, Role.CASHIER, Role.IMAM, Role.MEMBER)
         .filter { it != Role.ADMIN || issuerRole == Role.ADMIN || issuerRole == Role.SUPERADMIN }
+    val canIssue = issuerRole in setOf(Role.SUPERADMIN, Role.ADMIN, Role.PRESIDENT, Role.SECRETARY)
+    val tooLong = stringResource(R.string.invitation_field_too_long)
     val role = allowedRoles.firstOrNull { it.name == roleName } ?: Role.MEMBER
     val options = allowedRoles.map { it to roleLabel(it) }
     AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, modifier = Modifier.imePadding(),
@@ -55,21 +57,22 @@ internal fun PrototypeInviteMemberDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.invitation_member_help), style = MaterialTheme.typography.bodySmall)
                 LabeledField(stringResource(R.string.name), name, { name = it }, enabled = !saving,
-                    error = if (attempted) Validators.required(name) else null)
+                    error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null)
                 LabeledField(stringResource(R.string.email), email, { email = it }, enabled = !saving,
-                    keyboardType = KeyboardType.Email, error = if (attempted) Validators.email(email) else null)
+                    keyboardType = KeyboardType.Email, error = if (attempted) Validators.email(email) ?: tooLong.takeIf { email.trim().length > 254 } else null)
                 LabeledField(stringResource(R.string.phone), phone, { phone = it }, enabled = !saving,
                     keyboardType = KeyboardType.Phone, error = if (attempted) Validators.bdPhone(phone) else null)
                 DropdownField(stringResource(R.string.role), options, role, { roleName = it.name }, enabled = !saving)
-                LabeledField(stringResource(R.string.designation), designation, { designation = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.designation), designation, { designation = it }, enabled = !saving,
+                    error = if (attempted) tooLong.takeIf { designation.trim().length > 1000 } else null)
                 Text(stringResource(R.string.invitation_expiry_help), style = MaterialTheme.typography.bodySmall)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
-            TextButton(enabled = !saving, onClick = {
+            TextButton(enabled = !saving && canIssue, onClick = {
                 attempted = true
-                if (Validators.required(name) == null && Validators.email(email) == null && Validators.bdPhone(phone) == null &&
+                if (Validators.required(name) == null && Validators.email(email) == null && email.trim().length <= 254 && Validators.bdPhone(phone) == null &&
                     listOf(name, phone, designation).all { it.trim().length <= 1000 }) {
                     onSave(PrototypeInvitation(id, mosqueId, issuerUid, email.trim().lowercase(Locale.ROOT),
                         name.trim(), phone.trim(), role, designation.trim(), Timestamp(Date(expiresAt))))
