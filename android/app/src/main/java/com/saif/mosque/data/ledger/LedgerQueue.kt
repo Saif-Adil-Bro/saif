@@ -10,12 +10,13 @@ class LedgerQueue(private val context: Context, private val auth: FirebaseAuth) 
     suspend fun enqueue(draft: PrototypeLedgerDraft) {
         check(auth.currentUser?.uid == draft.uid) { "Signed-in account changed" }
         store.enqueue(draft)
-        try { PrototypeLedgerSync.schedule(context, draft) }
+        try { PrototypeLedgerSync.schedulePending(context, draft.uid, draft.mosqueId) }
         catch (e: CancellationException) { throw e } catch (_: Exception) { /* startup/periodic recovery */ }
     }
     suspend fun retry(draft: PrototypeLedgerDraft) {
         if (auth.currentUser?.uid == draft.uid && store.retry(draft.id, draft.uid, draft.mosqueId)) {
-            PrototypeLedgerSync.schedule(context, draft)
+            try { PrototypeLedgerSync.schedulePending(context, draft.uid, draft.mosqueId) }
+            catch (e: CancellationException) { throw e } catch (_: Exception) { /* startup/periodic recovery */ }
         }
     }
     suspend fun discard(draft: PrototypeLedgerDraft) {
