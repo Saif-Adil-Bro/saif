@@ -279,4 +279,7 @@
     <string name="join_change_account">Change account</string>
     <string name="join_complete">Membership confirmed. Close this screen and sign in.</string>
     <string name="join_change_code">Change code</string>
+    <string name="invitation_member_title">Invite member</string>
+    <string name="invitation_member_help">The invitation is saved first. Share its code only after the server confirms it. The member creates their own password.</string>
+    <string name="invitation_expiry_help">Expires six days after creating this draft. An incorrect device clock can prevent sync.</string>
 </resources>

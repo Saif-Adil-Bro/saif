@@ -249,4 +249,7 @@
     <string name="join_change_account">অ্যাকাউন্ট বদলান</string>
     <string name="join_complete">সদস্যপদ নিশ্চিত হয়েছে। এই পর্দা বন্ধ করে সাইন ইন করুন।</string>
     <string name="join_change_code">কোড বদলান</string>
+    <string name="invitation_member_title">সদস্যকে আমন্ত্রণ</string>
+    <string name="invitation_member_help">প্রথমে আমন্ত্রণ সংরক্ষিত হবে। সার্ভার নিশ্চিত করলে তবেই কোড পাঠান। সদস্য নিজেই পাসওয়ার্ড তৈরি করবেন।</string>
+    <string name="invitation_expiry_help">এই খসড়া তৈরির ছয় দিন পর মেয়াদ শেষ হবে। ডিভাইসের সময় ভুল হলে সিঙ্ক নাও হতে পারে।</string>
 </resources>
