@@ -87,6 +87,7 @@ class PrototypeInvitationIntegrationTest {
         val secondaryDb = FirebaseFirestore.getInstance(onboardingApp)
         secondaryAuth.useEmulator("10.0.2.2", 9099)
         secondaryDb.useEmulator("10.0.2.2", 8080)
+        assertTrue(runCatching { PrototypeOnboardingSession(secondaryAuth, db) }.isFailure)
         secondaryAuth.signOut()
         val failedMail = PrototypeOnboardingSession(secondaryAuth, secondaryDb) { throw IllegalStateException("test mail failure") }
         assertEquals(PrototypeSignupResult.ACCOUNT_CREATED_VERIFICATION_UNCONFIRMED, failedMail.signUp("inv-mail-failure@example.test", "test-only-password"))
@@ -99,6 +100,9 @@ class PrototypeInvitationIntegrationTest {
         onboarding.signOut()
         assertEquals(PrototypeSignupResult.VERIFICATION_REQUESTED, onboarding.signUp("INV-NEW@example.test", "test-only-password"))
         assertEquals("inv-admin", auth.currentUser?.uid)
+        val pendingUid = secondaryAuth.currentUser!!.uid
+        assertTrue(runCatching { onboarding.signUp("different@example.test", "test-only-password") }.isFailure)
+        assertEquals(pendingUid, secondaryAuth.currentUser?.uid)
         assertTrue(runCatching { onboarding.redeem("invite-test", nextInvite.id) }.exceptionOrNull() is InvitationNeedsVerification)
         // Simulate process/session recovery before opening the verification email.
         onboarding.signOut()
