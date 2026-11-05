@@ -41,6 +41,21 @@ object PrototypeLedgerSync {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "prototype-ledger-recovery", ExistingPeriodicWorkPolicy.KEEP, request)
     }
+    suspend fun recoverScope(context: Context, uid: String, mosqueId: String) {
+        val app = context.applicationContext as MosqueApp
+        if (app.container.auth.currentUser?.uid != uid) return
+        val store = PrototypeLedgerOutbox.get(context)
+        val waiting = store.list(uid, mosqueId).filter { it.state == "BLOCKED" && it.failure == "WAIT_MIGRATION" }
+        if (waiting.isNotEmpty()) {
+            // Only a confirmed, active v2 tenant releases migration-waiting drafts.
+            // Missing/inconsistent per-account fields remain blocked for investigation.
+            val snap = app.container.db.collection("mosques").document(mosqueId).get(Source.SERVER).await()
+            if (!snap.metadata.hasPendingWrites() && snap.getBoolean("active") == true && snap.getLong("ledgerVersion") == 2L && app.container.auth.currentUser?.uid == uid) {
+                waiting.forEach { store.retry(it.draft.id, uid, mosqueId) }
+            }
+        }
+        schedulePending(context, uid, mosqueId)
+    }
     suspend fun schedulePending(context: Context, uid: String, mosqueId: String) {
         PrototypeLedgerOutbox.get(context).list(uid, mosqueId).firstOrNull { it.state == "PENDING" }
             ?.let { schedule(context, it.draft) }
@@ -54,7 +69,7 @@ class PrototypeLedgerRecoveryWorker(context: Context, params: WorkerParameters) 
         val uid = (applicationContext as MosqueApp).container.auth.currentUser?.uid ?: return Result.success()
         return try {
             PrototypeLedgerOutbox.get(applicationContext).pendingMosques(uid).forEach {
-                PrototypeLedgerSync.schedulePending(applicationContext, uid, it)
+                PrototypeLedgerSync.recoverScope(applicationContext, uid, it)
             }
             Result.success()
         } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { Result.retry() }
@@ -109,6 +124,7 @@ class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : Corout
             val reason = when (e) {
                 is LedgerPermissionDenied -> "PERMISSION"
                 is LedgerOverdraft -> "INSUFFICIENT"
+                is LedgerVersionPending -> "WAIT_MIGRATION"
                 is LedgerMigrationRequired -> "MIGRATION"
                 is LedgerOperationConflict, is LedgerUnavailableAccount -> "CONFLICT"
                 is IllegalArgumentException -> "INVALID"

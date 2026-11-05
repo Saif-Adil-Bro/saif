@@ -55,7 +55,7 @@ fun PendingLedger(drafts: List<PrototypeQueuedLedger>, online: Boolean,
                                     Text(stringResource(when (queued.failure) {
                                         "PERMISSION" -> R.string.sync_check_permission
                                         "INSUFFICIENT" -> R.string.insufficient_balance
-                                        "MIGRATION" -> R.string.ledger_migration_required
+                                        "MIGRATION", "WAIT_MIGRATION" -> R.string.ledger_migration_required
                                         else -> R.string.sync_check_record
                                     }), style = MaterialTheme.typography.bodySmall)
                                     TextButton(enabled = online, onClick = { onRetry(queued) }) { Text(stringResource(R.string.retry)) }

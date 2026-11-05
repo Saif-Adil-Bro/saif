@@ -86,7 +86,7 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
                 try {
                     com.saif.mosque.data.outbox.DirectorySync.schedulePending(container.context, s.user.id)
                     com.saif.mosque.data.ledger.PrototypeLedgerSync.scheduleRecovery(container.context)
-                    s.user.mosqueId?.let { com.saif.mosque.data.ledger.PrototypeLedgerSync.schedulePending(container.context, s.user.id, it) }
+                    s.user.mosqueId?.let { com.saif.mosque.data.ledger.PrototypeLedgerSync.recoverScope(container.context, s.user.id, it) }
                 } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {
                     // Drafts remain durable and recovery will try scheduling again.
                 }

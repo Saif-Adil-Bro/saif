@@ -37,7 +37,7 @@ class PrototypeLedgerWriter(private val db: FirebaseFirestore, private val curre
                 if (existing.data != record) throw LedgerOperationConflict()
             } else {
                 val mosqueSnapshot = tx.get(parent)
-                if (mosqueSnapshot.getLong("ledgerVersion") != 2L) throw LedgerMigrationRequired()
+                if (mosqueSnapshot.getLong("ledgerVersion") != 2L) throw LedgerVersionPending()
                 val fundSnapshot = tx.get(fund)
                 val destinationSnapshot = destination?.let { tx.get(it) }
                 val donorSnapshot = donor?.let { tx.get(it) }
@@ -113,6 +113,7 @@ internal fun validatePrototypeDraft(d: PrototypeLedgerDraft) {
     }
 }
 class LedgerIdentityChanged : IllegalStateException("Signed-in account changed")
+class LedgerVersionPending : IllegalStateException("Ledger migration not yet activated")
 class LedgerMigrationRequired : IllegalStateException("Ledger requires reconciliation and migration")
 class LedgerOperationConflict : IllegalStateException("Ledger operation ID already exists with different content")
 class LedgerUnavailableAccount : IllegalStateException("Mosque, fund or donor is unavailable")

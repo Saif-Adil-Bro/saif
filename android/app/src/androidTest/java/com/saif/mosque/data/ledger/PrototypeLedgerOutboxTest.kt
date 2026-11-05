@@ -49,6 +49,15 @@ class PrototypeLedgerOutboxTest {
         assertTrue(store.acknowledge(d.id, "u1", "m1"))
         assertTrue(store.list("u1", "m1").isEmpty())
     }
+    @Test fun recoveryFindsVersionWaitingDraftsButNotManualConflicts() = runBlocking {
+        val waiting = draft("waiting", mosqueId="v1")
+        val conflict = draft("conflict", mosqueId="v2")
+        store.enqueue(waiting); store.enqueue(conflict)
+        assertTrue(store.block(waiting.id, "u1", "v1", "WAIT_MIGRATION"))
+        assertTrue(store.block(conflict.id, "u1", "v2", "MIGRATION"))
+        assertEquals(listOf("v1"), store.pendingMosques("u1"))
+        assertTrue(store.pendingMosques("u2").isEmpty())
+    }
     @Test fun invalidDraftNeverEntersQueue() = runBlocking {
         assertTrue(runCatching { store.enqueue(draft("bad").copy(amountPoisha=0)) }.isFailure)
         assertTrue(runCatching { store.enqueue(draft("bad").copy(date="2026-02-30")) }.isFailure)
