@@ -11,10 +11,15 @@ trap 'rm -f "$CONFIG"' EXIT
 node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:"firestore.rules"},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
 (cd functions && npm ci --ignore-scripts)
 npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config "$CONFIG" --only auth,firestore \
-  'node scripts/seed-sync-emulator.cjs && bash -o pipefail -c "node scripts/test-ledger-migration-emulator.mjs 2>&1 | tee /tmp/ledger-migration-test.log" && gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.saif.mosque.data.ledger.PrototypeLedgerIntegrationTest'
+  'node scripts/seed-sync-emulator.cjs && bash -o pipefail -c "node scripts/test-ledger-migration-emulator.mjs 2>&1 | tee /tmp/ledger-migration-test.log" && gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.saif.mosque.data.ledger.PrototypeLedgerIntegrationTest,com.saif.mosque.data.ledger.PrototypeCorrectionIntegrationTest'
 
 # Start a separate emulator with the proposed v2 rules and a migrated fixture.
 # Nothing is deployed; the ledger test must not run in the first suite.
 node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:"firestore.rules"},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
 npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config "$CONFIG" --only auth,firestore \
   'node scripts/seed-ledger-prototype-emulator.cjs && bash -o pipefail -c "gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.saif.mosque.data.ledger.PrototypeLedgerIntegrationTest 2>&1 | tee /tmp/ledger-prototype-test.log"'
+
+# A third, isolated run exercises the non-deployable correction prototype.
+node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1],JSON.stringify({firestore:{rules:"rules-tests/ledger-corrections-prototype.rules"},emulators:{auth:{host:"127.0.0.1",port:9099},firestore:{host:"127.0.0.1",port:8080},ui:{enabled:false},singleProjectMode:true}}))' "$CONFIG"
+npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config "$CONFIG" --only auth,firestore \
+  'node scripts/seed-correction-emulator.cjs && bash -o pipefail -c "gradle --no-daemon --console=plain connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.saif.mosque.data.ledger.PrototypeCorrectionIntegrationTest 2>&1 | tee /tmp/ledger-correction-test.log"'

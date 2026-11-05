@@ -53,8 +53,10 @@ matching client, rules, concurrency, retries and rollout/rollback together.
 
 `ledger-corrections-prototype.rules` and `ledger-mutations.test.mjs` explore
 immutable correction receipts, atomic aggregate deltas and soft deletion. They
-are separate from `android/firestore.rules`, and are not yet integrated with the
-app, reports, migration or offline queue. The design and emulator suite still
+are separate from `android/firestore.rules` and are not yet integrated with
+production edit/delete screens, migration or the offline queue. A test-only Android
+correction writer now exercises immutable receipts, concurrent conflicts and
+aggregate updates against a dedicated emulator running these isolated rules. The design and emulator suite still
 need review and must not be deployed. In particular, tombstones require filtering
 from financial views and reports and verifiable audit handling before activation.
 The Android read paths now exclude `voided` and malformed markers, including from
