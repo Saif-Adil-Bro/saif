@@ -35,5 +35,6 @@ class PrototypeInvitationOutboxTest {
         assertTrue(!reopened.transition("i", "other", "m", "BLOCKED", "PENDING"))
         assertTrue(reopened.transition("i", "uid", "m", "BLOCKED", "PENDING"))
         reopened.close(); context.deleteDatabase(name)
+        Unit
     }
 }
