@@ -29,8 +29,9 @@ The isolated `PrototypeLedgerWriter` exercises Android Firestore transactions,
 exact retry payloads, integer arithmetic and missing-migration refusal against
 these rules in a separately started Auth/Firestore emulator. It is **not wired
 into the app's repository or UI**. A separate experimental SQLite outbox stores
-immutable UID/mosque-scoped drafts and is excluded from backup, but it has no
-worker or UI yet and does not sync. The prototype does not yet support edits,
+immutable UID/mosque-scoped drafts and is excluded from backup. An experimental
+WorkManager worker is exercised only by the isolated emulator tests; no production
+screen or startup path schedules it, so it does not yet sync user data. The prototype does not yet support edits,
 deletes, historical-data migration or full rules-level
 calendar-date validation.
 The experiment uses new `balancePoisha`, `totalBalancePoisha` and

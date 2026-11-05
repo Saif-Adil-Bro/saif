@@ -19,6 +19,12 @@ class PrototypeLedgerOutbox internal constructor(context: Context, name: String 
     SQLiteOpenHelper(context.applicationContext, name, null, 1) {
     private val changed = MutableStateFlow(0L)
     private val gson = Gson()
+    companion object {
+        @Volatile private var shared: PrototypeLedgerOutbox? = null
+        fun get(context: Context): PrototypeLedgerOutbox = shared ?: synchronized(this) {
+            shared ?: PrototypeLedgerOutbox(context).also { shared = it }
+        }
+    }
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE entries (id TEXT PRIMARY KEY NOT NULL, uid TEXT NOT NULL,
             mosque_id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL,
