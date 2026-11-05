@@ -67,7 +67,10 @@ and end-to-end queue tests against local Firebase Auth/Firestore emulators. With
 Android emulator running, Node, JDK and Android SDK installed, and the app's Firebase
 configuration available locally, run `bash android/scripts/run-sync-emulator-tests.sh`
 from the repository root. It explicitly redirects the test clients to local emulators;
-it does not write to the production Firebase project. Run `gradle testDebugUnitTest`
+it does not write to the production Firebase project. The emulator config is placed
+beside `firestore.rules`, and an explicit denied-write check verifies that rules are
+actually loaded. Earlier Android emulator runs before this guard did not establish
+that the intended rules were active. Run `gradle testDebugUnitTest`
 from `android/` for the local policy tests.
 Also verify the full app manually at 320 dp and tablet widths, with increased font
 size, the keyboard open, both languages, and real Firebase data.
@@ -84,6 +87,11 @@ SQLite queues and sent after reconnecting. Ledger v2 uses integer poisha and
 atomic security rules and only works on a tenant explicitly migrated to v2.
 Financial edits/deletes and new-account provisioning still depend on Cloud
 Functions, so the complete app remains incompatible with Spark-only production.
+Directory sync now records a non-sensitive failure stage after a retry, but this
+is diagnostic only and does not by itself resolve a production permission denial.
+Do not uninstall the app to install a test build: queued drafts are lost on uninstall
+or data clear. Updating in place requires the same package, compatible version and
+signing identity; CI debug builds are not guaranteed to share a signing key.
 
 Before enabling v2, all legacy writers must be frozen or upgraded, and the tenant's
 complete historical data backed up, reconciled, and migrated. A gated, restartable maintenance migration tool is under test, but rollout is not
