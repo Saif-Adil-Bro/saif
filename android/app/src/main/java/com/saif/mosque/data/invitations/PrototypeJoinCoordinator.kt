@@ -151,8 +151,10 @@ class PrototypeJoinCoordinator(private val gateway: PrototypeJoinGateway, privat
                 if (currentIdentity == null) PrototypeJoinPhase.ACCOUNT else PrototypeJoinPhase.VERIFY,
                 identity = currentIdentity, message = if (currentIdentity?.uid == original.uid) null else PrototypeJoinMessage.AUTH_UNCERTAIN) }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
-            _state.update { it.copy(identity = gateway.identity(), message = if (e is InvitationNeedsVerification)
-                PrototypeJoinMessage.VERIFY_EMAIL else PrototypeJoinMessage.REDEEM_UNCONFIRMED) }
+            val currentIdentity = gateway.identity()
+            _state.update { it.copy(phase = if (currentIdentity == null) PrototypeJoinPhase.ACCOUNT else PrototypeJoinPhase.VERIFY,
+                identity = currentIdentity, message = if (currentIdentity?.uid != original.uid) PrototypeJoinMessage.AUTH_UNCERTAIN
+                    else if (e is InvitationNeedsVerification) PrototypeJoinMessage.VERIFY_EMAIL else PrototypeJoinMessage.REDEEM_UNCONFIRMED) }
         }
     }
 
