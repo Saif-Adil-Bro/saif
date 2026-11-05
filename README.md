@@ -93,6 +93,9 @@ Before any accounting migration, take a secure backup and obtain a complete,
 consistent tenant snapshot with your approved export process. The optional local
 audit below compares balances, donor totals and counters using integer poisha.
 It makes no Firebase calls, does not change or repair data, and is not a backup.
+If optional integer-poisha fields are present, it checks that they match the taka
+fields and flags noncanonical fractional values; absence of those integer fields
+does not mean the data is ready for migration.
 Keep exports containing personal data out of the repository and protect them.
 
 ```sh

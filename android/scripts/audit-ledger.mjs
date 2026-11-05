@@ -14,6 +14,12 @@ export function audit(snapshot) {
   if (typeof mosqueId !== 'string' || !mosqueId || mosqueId.includes('/')) throw new Error('Expected mosque.id');
   const issues = [];
   function problem(code, entity, id = '') { issues.push({ code, entity, id }); }
+  function checkRepresentation(row, poishaField, value, n, entity, id = '') {
+    if (value !== n / 100) { problem('noncanonical_money', entity, id); valid = false; }
+    if (Object.hasOwn(row, poishaField) && (!Number.isSafeInteger(row[poishaField]) || row[poishaField] !== n)) {
+      problem('integer_taka_mismatch', entity, id); valid = false;
+    }
+  }
   function list(key) {
     if (!Array.isArray(snapshot[key])) throw new Error(`Expected array: ${key}`);
     return snapshot[key];
@@ -61,6 +67,8 @@ export function audit(snapshot) {
       if (row.mosqueId !== mosqueId) { problem('wrong_or_missing_tenant', kind, id); valid = false; continue; }
       try {
         const delta = effects(kind, null, row);
+        const amountPoisha = cents(row.amount, true);
+        checkRepresentation(row, 'amountPoisha', row.amount, amountPoisha, kind, id);
         if ([...delta.funds.keys()].some(k => !fundMap.has(k)) || [...delta.donors.keys()].some(k => !donorMap.has(k))) {
           problem('missing_reference', kind, id); valid = false; continue;
         }
@@ -77,6 +85,8 @@ export function audit(snapshot) {
     for (const [id, row] of rows) {
       try {
         const actual = cents(row[field]);
+        const poishaField = field === 'balance' ? 'balancePoisha' : 'totalDonatedPoisha';
+        checkRepresentation(row, poishaField, row[field], actual, entity, id);
         if (actual < 0) problem('negative_stored_total', entity, id);
         if (valid && actual !== expected.get(id)) problem('ledger_mismatch', entity, id);
         if (entity === 'funds') {
@@ -90,6 +100,7 @@ export function audit(snapshot) {
   compare(donorMap, donorExpected, 'totalDonated', 'donors');
   try {
     const mosqueTotal = cents(snapshot.mosque.totalBalance);
+    checkRepresentation(snapshot.mosque, 'totalBalancePoisha', snapshot.mosque.totalBalance, mosqueTotal, 'mosque');
     if (mosqueTotal < 0) problem('negative_stored_total', 'mosque');
     if (valid && mosqueTotal !== actualFundTotal) problem('fund_total_mismatch', 'mosque');
   } catch { problem('invalid_stored_total', 'mosque'); valid = false; }

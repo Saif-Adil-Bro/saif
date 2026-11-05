@@ -48,3 +48,23 @@ test('refuses to treat cross-tenant or missing-tenant records as a complete audi
   assert.equal(result.complete, false);
   assert.equal(result.issues.filter(x => x.code === 'wrong_or_missing_tenant').length, 2);
 });
+
+test('detects noncanonical stored values and disagreement with optional integer fields', () => {
+  const input = sample();
+  input.funds[0].balance = 0.30000000000000004;
+  input.funds[0].balancePoisha = 30;
+  input.contributions[0].amountPoisha = 7;
+  input.mosque.totalBalancePoisha = 1;
+  const result = audit(input);
+  assert.equal(result.complete, false);
+  assert.ok(result.issues.some(x => x.code === 'noncanonical_money' && x.entity === 'funds'));
+  assert.ok(result.issues.some(x => x.code === 'integer_taka_mismatch' && x.entity === 'contributions'));
+  assert.ok(result.issues.some(x => x.code === 'integer_taka_mismatch' && x.entity === 'mosque'));
+});
+test('accepts consistent optional integer fields without requiring them for legacy data', () => {
+  const input = sample();
+  input.funds[0].balancePoisha = 7025; input.funds[1].balancePoisha = 1500;
+  input.donors[0].totalDonatedPoisha = 10025; input.mosque.totalBalancePoisha = 8525;
+  input.contributions[0].amountPoisha = 10025; input.expenses[0].amountPoisha = 1500;
+  assert.deepEqual(audit(input).issues, []);
+});
