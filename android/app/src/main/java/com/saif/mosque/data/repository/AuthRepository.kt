@@ -116,8 +116,11 @@ class AuthRepository(
                 .await().getData() as Map<*, *>
             Result.success(AppUser(id = result["uid"] as String, name = name, email = email,
                 phone = phone, role = role, mosqueId = currentUser.mosqueId, designation = designation))
-        } catch (ex: Exception) {
-            Result.failure(AuthException(R.string.error_generic, ex.message))
+        } catch (ex: kotlinx.coroutines.CancellationException) { throw ex } catch (ex: Exception) {
+            val resId = if (ex is com.google.firebase.functions.FirebaseFunctionsException &&
+                ex.code == com.google.firebase.functions.FirebaseFunctionsException.Code.NOT_FOUND)
+                R.string.member_service_missing else R.string.error_generic
+            Result.failure(AuthException(resId))
         }
     }
 

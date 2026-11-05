@@ -50,6 +50,7 @@ import com.saif.mosque.R
 import com.saif.mosque.data.model.AppUser
 import com.saif.mosque.data.model.Role
 import com.saif.mosque.data.repository.AuthRepository
+import com.saif.mosque.data.repository.AuthException
 import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.data.repository.SelfActionException
 import com.saif.mosque.di.AppContainer
@@ -88,34 +89,41 @@ class MembersViewModel(
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
 
-    fun create(name: String, email: String, phone: String, role: Role, designation: String, password: String) {
+    fun create(name: String, email: String, phone: String, role: Role, designation: String,
+               password: String, done: (Msg?) -> Unit) {
         viewModelScope.launch {
-            val res = authRepo.createMember(user, name, email, phone, role, designation, password)
-            res.onSuccess { _messages.emit(Msg.Res(R.string.saved_ok)) }
-                .onFailure { e ->
-                    _messages.emit(Msg.Text(e.message ?: "error"))
-                }
+            try {
+                val result = authRepo.createMember(user, name, email, phone, role, designation, password)
+                val error = result.exceptionOrNull()
+                if (error == null) { done(null); _messages.emit(Msg.Res(R.string.saved_ok)) }
+                else done(if (error is AuthException) Msg.Res(error.resId) else Msg.Res(R.string.error_generic))
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+              catch (_: Exception) { done(Msg.Res(R.string.error_generic)) }
         }
     }
 
-    fun update(old: AppUser, member: AppUser) {
-        if (member.id == user.id && !member.active) {
-            viewModelScope.launch { _messages.emit(Msg.Res(R.string.cannot_deactivate_self)) }
-        } else mutate { ledger.updateMember(mosqueId, old, member, user) }
+    fun update(old: AppUser, member: AppUser, done: (Msg?) -> Unit) {
+        if (member.id == user.id && !member.active) done(Msg.Res(R.string.cannot_deactivate_self))
+        else mutate(done) { ledger.updateMember(mosqueId, old, member, user) }
     }
 
     fun delete(member: AppUser) {
         if (member.id == user.id) {
             viewModelScope.launch { _messages.emit(Msg.Res(R.string.cannot_delete_self)) }
-        } else mutate { ledger.deleteMember(mosqueId, member.id, user) }
+        } else mutate(null) { ledger.deleteMember(mosqueId, member.id, user) }
     }
 
-    private fun mutate(block: suspend () -> Unit) {
+    private fun mutate(done: ((Msg?) -> Unit)?, block: suspend () -> Unit) {
         viewModelScope.launch {
-            try { block(); _messages.emit(Msg.Res(R.string.saved_ok)) }
-            catch (e: Exception) { _messages.emit(Msg.Text(e.message ?: "error")) }
+            try { block(); done?.invoke(null); _messages.emit(Msg.Res(R.string.saved_ok)) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                val error = Msg.Text(e.message ?: "error")
+                if (done != null) done(error) else _messages.emit(error)
+            }
         }
     }
+
 }
 
 @Composable
@@ -143,6 +151,8 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
 
     var editing by remember { mutableStateOf<AppUser?>(null) }
     var deleting by remember { mutableStateOf<AppUser?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -188,16 +198,22 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
     editing?.let { target ->
         MemberFormDialog(
             initial = target,
-            isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            isNew = target.id.isEmpty(), saving = saving, saveError = saveError,
+            onDismiss = { editing = null; saveError = null },
             onSave = { name, email, phone, role, designation, active, password ->
-                if (target.id.isEmpty()) {
-                    vm.create(name, email, phone, role, designation, password)
-                } else {
-                    vm.update(target, target.copy(name = name, email = email, phone = phone,
-                        role = role, designation = designation, active = active))
+                if (!saving) {
+                    saving = true; saveError = null
+                    val done: (Msg?) -> Unit = { result ->
+                        saving = false
+                        if (result == null) editing = null else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                    if (target.id.isEmpty()) vm.create(name, email, phone, role, designation, password, done)
+                    else vm.update(target, target.copy(name = name, email = email, phone = phone,
+                        role = role, designation = designation, active = active), done)
                 }
-                editing = null
             }
         )
     }
@@ -208,9 +224,11 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
 }
 
 @Composable
-private fun MemberFormDialog(
+internal fun MemberFormDialog(
     initial: AppUser,
     isNew: Boolean,
+    saving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: (String, String, String, Role, String, Boolean, String) -> Unit
 ) {
@@ -227,40 +245,44 @@ private fun MemberFormDialog(
         Role.CASHIER, Role.IMAM, Role.MEMBER).map { it to roleLabel(it) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_member else R.string.edit_member)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LabeledField(stringResource(R.string.name), name, { name = it },
-                    error = if (attempted) Validators.required(name) else null)
+                    error = if (attempted) Validators.required(name) else null, enabled = !saving)
                 LabeledField(stringResource(R.string.email), email, { email = it },
                     error = if (isNew && attempted) Validators.email(email) else null, keyboardType = KeyboardType.Email,
-                    readOnly = !isNew)
-                LabeledField(stringResource(R.string.phone), phone, { phone = it }, keyboardType = KeyboardType.Phone)
-                DropdownField(stringResource(R.string.role), roleOptions, role, { role = it })
-                LabeledField(stringResource(R.string.designation), designation, { designation = it })
+                    readOnly = !isNew, enabled = !saving)
+                LabeledField(stringResource(R.string.phone), phone, { phone = it }, keyboardType = KeyboardType.Phone, enabled = !saving)
+                DropdownField(stringResource(R.string.role), roleOptions, role, { role = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.designation), designation, { designation = it }, enabled = !saving)
                 if (isNew) {
                     PasswordField(stringResource(R.string.password), password, { password = it },
-                        error = if (attempted) Validators.password(password) else null)
+                        error = if (attempted) Validators.password(password) else null, enabled = !saving)
                 }
                 if (!isNew) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
                     val activeLabel = stringResource(R.string.active)
-                    Switch(checked = active, onCheckedChange = { active = it },
+                    Switch(checked = active, onCheckedChange = { active = it }, enabled = !saving,
                         modifier = Modifier.semantics { contentDescription = activeLabel })
+                }
+                saveError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    if (isNew) Text(stringResource(R.string.member_check_before_retry), style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
         confirmButton = {
-            TextButton(enabled = !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
+            TextButton(enabled = !saving && !com.saif.mosque.ui.components.LocalOfflineMode.current, onClick = {
                 attempted = true
                 if (Validators.required(name) != null ||
                     (isNew && (Validators.email(email) != null || Validators.password(password) != null))) {
                     return@TextButton
                 }
                 onSave(name.trim(), email.trim(), phone.trim(), role, designation.trim(), active, password)
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

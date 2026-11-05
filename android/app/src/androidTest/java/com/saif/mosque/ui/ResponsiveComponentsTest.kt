@@ -101,4 +101,14 @@ class ResponsiveComponentsTest {
         compose.onNodeWithText(context.getString(R.string.sync_diagnostic_code, "WRITE_DENIED")).assertIsDisplayed()
     }
 
+    @Test fun waitingForLedgerMigrationExplainsAutomaticRetry() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val draft = PrototypeLedgerDraft(id="c", uid="u", mosqueId="m", kind="contributions", amountPoisha=1000,
+            sourceFundId="f", donorName="Donor", date="2026-11-05", createdAt=1)
+        compose.setContent { MosqueTheme { PendingLedger(listOf(PrototypeQueuedLedger(draft, "BLOCKED", "WAIT_MIGRATION")),
+            online=true, onRetry={}, onDiscard={}) } }
+        compose.onNodeWithText(context.getString(R.string.pending_count, 1)).performClick()
+        compose.onNodeWithText(context.getString(R.string.ledger_wait_migration)).assertExists()
+    }
+
 }

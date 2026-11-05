@@ -245,7 +245,8 @@ fun PasswordField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    error: String? = null
+    error: String? = null,
+    enabled: Boolean = true
 ) {
     var visible by remember { mutableStateOf(false) }
     val message = when (error) {
@@ -260,10 +261,11 @@ fun PasswordField(
         modifier = modifier.fillMaxWidth(),
         isError = message != null,
         supportingText = message?.let { { Text(it) } },
+        enabled = enabled,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {
-            IconButton(onClick = { visible = !visible }) {
+            IconButton(enabled = enabled, onClick = { visible = !visible }) {
                 Icon(if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                     contentDescription = stringResource(if (visible) R.string.hide_password else R.string.show_password))
             }

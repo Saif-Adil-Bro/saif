@@ -252,5 +252,8 @@
     <string name="sync_conflict_help">This record changed elsewhere. Discard this local draft and edit the latest record.</string>
     <string name="discard_local">Discard local</string>
     <string name="discard_local_warning">Remove this draft from this device? It may already have been sent and could appear online later. This does not undo online changes.</string>
+    <string name="member_service_missing">Member creation service is unavailable for this project.</string>
+    <string name="member_check_before_retry">Before retrying, check whether the account was created online.</string>
+    <string name="ledger_wait_migration">This mosque is not yet ready for the new ledger. This draft will retry after setup is confirmed.</string>
     <string name="ledger_migration_required">Ledger setup is incomplete. Ask an administrator to reconcile and migrate the balances.</string>
 </resources>

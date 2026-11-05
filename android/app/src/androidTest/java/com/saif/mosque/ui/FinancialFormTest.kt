@@ -11,6 +11,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.saif.mosque.R
 import com.saif.mosque.data.model.Expense
+import com.saif.mosque.data.model.AppUser
+import com.saif.mosque.ui.screens.MemberFormDialog
 import com.saif.mosque.data.model.Fund
 import com.saif.mosque.ui.screens.ExpenseFormDialog
 import com.saif.mosque.ui.theme.MosqueTheme
@@ -42,4 +44,24 @@ class FinancialFormTest {
         compose.onNodeWithText("Request failed").assertExists()
         compose.onNodeWithText(context.getString(R.string.sync_check_record)).assertExists()
     }
+    @Test fun memberFormRetainsInputWhenSaveFails() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        var saving by mutableStateOf(false)
+        var failure by mutableStateOf<String?>(null)
+        compose.setContent {
+            MosqueTheme {
+                MemberFormDialog(initial = AppUser(name = "Member draft", email = "member@example.test"), isNew = true,
+                    saving = saving, saveError = failure, onDismiss = {}, onSave = { _, _, _, _, _, _, _ -> })
+            }
+        }
+        compose.onNodeWithText("Member draft").assertExists()
+        compose.runOnIdle { saving = true }
+        compose.onNodeWithText(context.getString(R.string.saving)).assertIsNotEnabled()
+        compose.onNodeWithText("Member draft").assertIsNotEnabled()
+        compose.runOnIdle { saving = false; failure = context.getString(R.string.member_service_missing) }
+        compose.onNodeWithText("Member draft").assertExists()
+        compose.onNodeWithText(context.getString(R.string.member_service_missing)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.member_check_before_retry)).assertExists()
+    }
+
 }
