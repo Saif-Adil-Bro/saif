@@ -113,7 +113,15 @@ entry dialogs are tested but not routed from the app. The experimental join
 coordinator and Compose flow connect code, separate Auth session, verification,
 and server-confirmed redemption; only the invitation reference is stored locally
 and it is excluded from backup. After restart it rechecks server confirmation rather
-than trusting a saved success flag. The flow is not available from normal navigation. This is not wired into
+than trusting a saved success flag. The flow is not available from normal navigation. A separate experimental SQLite
+outbox and WorkManager worker persist the exact issuer-scoped invitation without
+passwords, check the issuer and tenant on the server, and retry a stable ID after
+uncertain acknowledgement. A READY state records a past server confirmation,
+not current validity: before sharing, the client must re-read the status online,
+display the expiry, and treat expiration/device-clock skew conservatively. A
+server-confirmed pending status cannot by itself prove it has not expired. Startup
+recovery still needs integration and real-device verification, and the outbox
+is excluded from backup; uninstall or data clear deletes its local drafts. This is not wired into
 the app UI, a durable queue or deployed rules.
 
 A production design still needs an invitation sharing/discovery and email

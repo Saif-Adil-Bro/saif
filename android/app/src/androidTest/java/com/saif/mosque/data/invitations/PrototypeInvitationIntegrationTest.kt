@@ -3,6 +3,9 @@ package com.saif.mosque.data.invitations
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.ListenableWorker
+import androidx.work.testing.TestListenableWorkerBuilder
+import androidx.work.workDataOf
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -10,6 +13,7 @@ import com.google.firebase.firestore.Source
 import com.saif.mosque.MosqueApp
 import com.saif.mosque.data.model.Role
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
@@ -38,6 +42,32 @@ class PrototypeInvitationIntegrationTest {
         val service = PrototypeInvitationService(db, auth)
         val parent = db.collection("mosques").document("invite-test")
         login("inv-admin@example.test")
+        val queue = PrototypeInvitationQueue(app, auth)
+        val queued = PrototypeInvitation(service.newId("invite-test"), "invite-test", "inv-admin",
+            "queue@example.test", "Offline draft", "", Role.MEMBER, "", Timestamp(Date(System.currentTimeMillis() + 86_400_000)))
+        suspend fun syncInvitation(d: PrototypeInvitation): ListenableWorker.Result =
+            TestListenableWorkerBuilder<PrototypeInvitationWorker>(app).setInputData(workDataOf(
+                "id" to d.id, "uid" to d.issuerUid, "mosqueId" to d.mosqueId)).build().doWork()
+        db.disableNetwork().await()
+        queue.store.enqueue(queued)
+        assertEquals(ListenableWorker.Result.retry(), withTimeout(20_000) { syncInvitation(queued) })
+        assertEquals("PENDING", queue.store.find(queued.id, queued.issuerUid, queued.mosqueId)?.state)
+        db.enableNetwork().await()
+        login("inv-wrong@example.test")
+        assertEquals(ListenableWorker.Result.success(), syncInvitation(queued))
+        assertEquals("PENDING", queue.store.find(queued.id, queued.issuerUid, queued.mosqueId)?.state)
+        login("inv-admin@example.test")
+        PrototypeInvitationSync.schedule(app, queued)
+        withTimeout(45_000) { while (queue.store.find(queued.id, queued.issuerUid, queued.mosqueId)?.state != "READY") delay(250) }
+        assertEquals(PrototypeInvitationStatus.PENDING, queue.checkSharingStatus(queued))
+        // Simulate a crash after server commit but before the local acknowledgement.
+        val values = android.content.ContentValues().apply { put("state", "PENDING"); putNull("failure") }
+        queue.store.writableDatabase.update("invites", values, "id = ?", arrayOf(queued.id))
+        assertEquals(ListenableWorker.Result.success(), syncInvitation(queued))
+        assertEquals("READY", queue.store.find(queued.id, queued.issuerUid, queued.mosqueId)?.state)
+        service.revoke("invite-test", queued.id, "inv-admin")
+        assertEquals(PrototypeInvitationStatus.REVOKED, queue.checkSharingStatus(queued))
+        assertEquals(1L, parent.get(Source.SERVER).await().getLong("memberCount"))
         val invitation = PrototypeInvitation(service.newId("invite-test"), "invite-test", "inv-admin",
             "inv-member@example.test", "Member", "", Role.MEMBER, "", Timestamp(Date(System.currentTimeMillis() + 86_400_000)))
         assertEquals(PrototypeInvitationStatus.PENDING, service.issue(invitation))

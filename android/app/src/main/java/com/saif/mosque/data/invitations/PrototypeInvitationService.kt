@@ -35,7 +35,7 @@ class PrototypeInvitationService(private val db: FirebaseFirestore, private val 
     }
 
     suspend fun issue(draft: PrototypeInvitation): PrototypeInvitationStatus {
-        validate(draft)
+        validatePrototypeInvitation(draft)
         ensureUid(draft.issuerUid)
         val ref = db.collection("mosques").document(draft.mosqueId).collection("invitations").document(draft.id)
         val expected = fields(draft)
@@ -53,14 +53,29 @@ class PrototypeInvitationService(private val db: FirebaseFirestore, private val 
             ensureUid(draft.issuerUid)
             if (saved.metadata.hasPendingWrites()) throw InvitationPendingWrite()
             val actual = saved.data ?: throw e
-            if (expected.any { (key, value) -> key != "status" && actual[key] != value }) throw InvitationConflict()
-            return when (actual["status"]) {
-                "pending" -> if (actual.keys == expected.keys) PrototypeInvitationStatus.PENDING else throw InvitationConflict()
-                "accepted" -> if (actual.keys == expected.keys + "acceptedBy" &&
-                    (actual["acceptedBy"] as? String)?.let(::validId) == true) PrototypeInvitationStatus.ACCEPTED else throw InvitationConflict()
-                "revoked" -> if (actual.keys == expected.keys) PrototypeInvitationStatus.REVOKED else throw InvitationConflict()
-                else -> throw InvitationConflict()
-            }
+            return savedStatus(actual, expected)
+        }
+    }
+
+    /** Re-check current server status before sharing a previously confirmed code. */
+    suspend fun inspect(draft: PrototypeInvitation): PrototypeInvitationStatus {
+        validatePrototypeInvitation(draft)
+        ensureUid(draft.issuerUid)
+        val snap = db.collection("mosques").document(draft.mosqueId).collection("invitations").document(draft.id)
+            .get(Source.SERVER).await()
+        ensureUid(draft.issuerUid)
+        if (snap.metadata.hasPendingWrites()) throw InvitationPendingWrite()
+        return savedStatus(snap.data ?: throw InvitationConflict(), fields(draft))
+    }
+
+    private fun savedStatus(actual: Map<String, Any>, expected: Map<String, Any>): PrototypeInvitationStatus {
+        if (expected.any { (key, value) -> key != "status" && actual[key] != value }) throw InvitationConflict()
+        return when (actual["status"]) {
+            "pending" -> if (actual.keys == expected.keys) PrototypeInvitationStatus.PENDING else throw InvitationConflict()
+            "accepted" -> if (actual.keys == expected.keys + "acceptedBy" &&
+                (actual["acceptedBy"] as? String)?.let(::validId) == true) PrototypeInvitationStatus.ACCEPTED else throw InvitationConflict()
+            "revoked" -> if (actual.keys == expected.keys) PrototypeInvitationStatus.REVOKED else throw InvitationConflict()
+            else -> throw InvitationConflict()
         }
     }
 
@@ -145,13 +160,16 @@ class PrototypeInvitationService(private val db: FirebaseFirestore, private val 
         "role" to d.role.name, "designation" to d.designation, "createdBy" to d.issuerUid,
         "status" to "pending", "expiresAt" to d.expiresAt)
     private fun ensureUid(uid: String) { if (auth.currentUser?.uid != uid) throw InvitationIdentityChanged() }
-    private fun validate(d: PrototypeInvitation) {
-        require(validId(d.id) && validId(d.mosqueId) && validId(d.issuerUid))
-        require(validEmail(d.email) && d.email == d.email.lowercase(Locale.ROOT))
-        require(d.name.isNotBlank() && d.name.length <= 1000 && d.phone.length <= 1000 && d.designation.length <= 1000)
-        require(d.role.name in allowedRoles)
-    }
     private fun validId(id: String) = id.isNotEmpty() && id.length <= 1500 && !id.contains('/')
     private fun validEmail(email: String) = email.length in 4..254 && Regex("^[^@/\\s]+@[^@/\\s]+$").matches(email)
     private val allowedRoles = setOf("ADMIN", "PRESIDENT", "SECRETARY", "TREASURER", "CASHIER", "IMAM", "MEMBER")
+}
+
+internal fun validatePrototypeInvitation(d: PrototypeInvitation) {
+    fun id(value: String) = value.isNotEmpty() && value.length <= 1500 && !value.contains('/')
+    fun email(value: String) = value.length in 4..254 && Regex("^[^@/\\s]+@[^@/\\s]+$").matches(value)
+    require(id(d.id) && id(d.mosqueId) && id(d.issuerUid))
+    require(email(d.email) && d.email == d.email.lowercase(Locale.ROOT))
+    require(d.name.isNotBlank() && d.name.length <= 1000 && d.phone.length <= 1000 && d.designation.length <= 1000)
+    require(d.role in setOf(Role.ADMIN, Role.PRESIDENT, Role.SECRETARY, Role.TREASURER, Role.CASHIER, Role.IMAM, Role.MEMBER))
 }
