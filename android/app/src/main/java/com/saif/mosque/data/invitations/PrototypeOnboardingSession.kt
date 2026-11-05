@@ -45,6 +45,8 @@ class PrototypeOnboardingSession(
     }
     private val invitations = PrototypeInvitationService(db, auth)
 
+    fun identity(): PrototypeJoinIdentity? = auth.currentUser?.let { PrototypeJoinIdentity(it.uid, it.email) }
+
     suspend fun signUp(email: String, password: String): PrototypeSignupResult {
         val normalized = normalizedEmail(email)
         require(password.length >= 8)

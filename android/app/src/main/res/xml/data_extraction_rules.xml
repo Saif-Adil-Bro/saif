@@ -2,6 +2,7 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="datastore/session.preferences_pb" />
+        <exclude domain="sharedpref" path="join-reference-prototype.xml" />
         <exclude domain="database" path="directory-outbox.db" />
         <exclude domain="database" path="directory-outbox.db-wal" />
         <exclude domain="database" path="directory-outbox.db-shm" />
@@ -13,6 +14,7 @@
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="datastore/session.preferences_pb" />
+        <exclude domain="sharedpref" path="join-reference-prototype.xml" />
         <exclude domain="database" path="directory-outbox.db" />
         <exclude domain="database" path="directory-outbox.db-wal" />
         <exclude domain="database" path="directory-outbox.db-shm" />

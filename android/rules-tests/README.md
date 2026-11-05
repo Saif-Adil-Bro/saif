@@ -109,7 +109,11 @@ re-sign in after partial failure and redeem without replacing the primary admin
 session; it never automatically deletes an Auth account. A versioned copyable
 invitation code carries only the mosque and invitation IDs: it is not a bearer
 credential and still requires the exact verified email. Experimental share and
-entry dialogs are tested but not routed from the app. This is not wired into
+entry dialogs are tested but not routed from the app. The experimental join
+coordinator and Compose flow connect code, separate Auth session, verification,
+and server-confirmed redemption; only the invitation reference is stored locally
+and it is excluded from backup. After restart it rechecks server confirmation rather
+than trusting a saved success flag. The flow is not available from normal navigation. This is not wired into
 the app UI, a durable queue or deployed rules.
 
 A production design still needs an invitation sharing/discovery and email

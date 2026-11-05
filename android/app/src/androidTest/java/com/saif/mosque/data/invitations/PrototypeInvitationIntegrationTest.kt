@@ -16,6 +16,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -98,16 +99,29 @@ class PrototypeInvitationIntegrationTest {
         onboarding.signIn("inv-mail-failure@example.test", "test-only-password")
         assertEquals(PrototypeVerificationResult.REQUESTED, onboarding.resendVerification())
         onboarding.signOut()
-        assertEquals(PrototypeSignupResult.VERIFICATION_REQUESTED, onboarding.signUp("INV-NEW@example.test", "test-only-password"))
+        val referenceStore = PrototypeJoinPreferences(app, "join-reference-integration-test")
+        referenceStore.write(null)
+        val coordinator = PrototypeJoinCoordinator(PrototypeJoinFirebaseGateway(onboarding), referenceStore)
+        coordinator.restore()
+        coordinator.useCode(InvitationCode.encode(InvitationAddress("invite-test", nextInvite.id)))
+        assertEquals(PrototypeJoinPhase.ACCOUNT, coordinator.state.value.phase)
+        coordinator.signUp("INV-NEW@example.test", "test-only-password")
+        assertEquals(PrototypeJoinPhase.VERIFY, coordinator.state.value.phase)
+        assertEquals(PrototypeJoinMessage.VERIFICATION_REQUESTED, coordinator.state.value.message)
         assertEquals("inv-admin", auth.currentUser?.uid)
         val pendingUid = secondaryAuth.currentUser!!.uid
         assertTrue(runCatching { onboarding.signUp("different@example.test", "test-only-password") }.isFailure)
         assertEquals(pendingUid, secondaryAuth.currentUser?.uid)
-        assertTrue(runCatching { onboarding.redeem("invite-test", nextInvite.id) }.exceptionOrNull() is InvitationNeedsVerification)
+        coordinator.redeem()
+        assertEquals(PrototypeJoinMessage.VERIFY_EMAIL, coordinator.state.value.message)
         // Simulate process/session recovery before opening the verification email.
-        onboarding.signOut()
-        onboarding.signIn("inv-new@example.test", "test-only-password")
-        assertEquals(PrototypeVerificationResult.REQUESTED, onboarding.resendVerification())
+        coordinator.changeAccount()
+        val restored = PrototypeJoinCoordinator(PrototypeJoinFirebaseGateway(onboarding), referenceStore)
+        restored.restore()
+        assertEquals(PrototypeJoinPhase.ACCOUNT, restored.state.value.phase)
+        restored.signIn("inv-new@example.test", "test-only-password")
+        restored.resendVerification()
+        assertEquals(PrototypeJoinMessage.VERIFICATION_REQUESTED, restored.state.value.message)
         val code = withContext(Dispatchers.IO) {
             val project = onboardingApp.options.projectId!!
             val connection = URL("http://10.0.2.2:9099/emulator/v1/projects/$project/oobCodes").openConnection() as HttpURLConnection
@@ -120,12 +134,19 @@ class PrototypeInvitationIntegrationTest {
         }
         secondaryAuth.applyActionCode(code).await()
         assertEquals(PrototypeVerificationResult.ALREADY_VERIFIED, onboarding.resendVerification())
-        val address = InvitationCode.decode(InvitationCode.encode(InvitationAddress("invite-test", nextInvite.id)))!!
-        onboarding.redeem(address.mosqueId, address.invitationId)
-        onboarding.redeem(address.mosqueId, address.invitationId)
+        restored.redeem()
+        assertEquals(PrototypeJoinPhase.COMPLETE, restored.state.value.phase)
+        // Recovery after server commit re-checks the receipt without re-counting.
+        val afterCommit = PrototypeJoinCoordinator(PrototypeJoinFirebaseGateway(onboarding), referenceStore)
+        afterCommit.restore()
+        assertEquals(PrototypeJoinPhase.VERIFY, afterCommit.state.value.phase)
+        afterCommit.redeem()
+        assertEquals(PrototypeJoinPhase.COMPLETE, afterCommit.state.value.phase)
         assertEquals("inv-admin", auth.currentUser?.uid)
         assertEquals(3L, parent.get(Source.SERVER).await().getLong("memberCount"))
         assertTrue(db.collection("users").document(secondaryAuth.currentUser!!.uid).get(Source.SERVER).await().exists())
+        afterCommit.clearReference()
+        assertNull(referenceStore.read())
         onboarding.signOut()
         auth.signOut()
     }

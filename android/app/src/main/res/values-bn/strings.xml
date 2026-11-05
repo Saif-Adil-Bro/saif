@@ -235,4 +235,18 @@
     <string name="invitation_share_title">আমন্ত্রণ</string>
     <string name="invitation_share_help">আমন্ত্রিত সদস্যকে পাঠান। তাঁকে নির্দিষ্ট ইমেইল যাচাই করতে হবে।</string>
     <string name="invitation_copy">কপি</string>
+    <string name="join_storage_error">এই ডিভাইসে আমন্ত্রণটি সংরক্ষণ করা যায়নি।</string>
+    <string name="join_auth_uncertain">অ্যাকাউন্টের অবস্থা নিশ্চিত নয়। অ্যাকাউন্ট থাকলে সাইন ইন করে চালিয়ে যান।</string>
+    <string name="join_verification_requested">যাচাই ইমেইলের অনুরোধ পাঠানো হয়েছে। এগোনোর আগে ইনবক্স দেখুন।</string>
+    <string name="join_verification_uncertain">যাচাই ইমেইলের অনুরোধ নিশ্চিত নয়। আবার অনুরোধ করতে পারেন।</string>
+    <string name="join_verify_email">এগোনোর আগে আমন্ত্রিত ইমেইল যাচাই করুন।</string>
+    <string name="join_redeem_uncertain">সদস্যপদ নিশ্চিত হয়নি। আমন্ত্রণ, ইমেইল ও ইন্টারনেট দেখে আবার চেষ্টা করুন।</string>
+    <string name="join_account_help">আমন্ত্রিত ইমেইল ব্যবহার করুন। এই ফর্মে পাসওয়ার্ড সংরক্ষণ করা হয় না।</string>
+    <string name="join_create_account">অ্যাকাউন্ট তৈরি</string>
+    <string name="join_have_account">অ্যাকাউন্ট আছে</string>
+    <string name="join_verify_help">যাচাই ইমেইল খুলে তারপর এগিয়ে যান।</string>
+    <string name="join_resend">ইমেইল আবার পাঠান</string>
+    <string name="join_change_account">অ্যাকাউন্ট বদলান</string>
+    <string name="join_complete">সদস্যপদ নিশ্চিত হয়েছে। এই পর্দা বন্ধ করে সাইন ইন করুন।</string>
+    <string name="join_change_code">কোড বদলান</string>
 </resources>

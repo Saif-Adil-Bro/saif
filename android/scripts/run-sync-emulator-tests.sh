@@ -15,6 +15,7 @@ npx --yes firebase-tools@13.35.1 emulators:exec --project "$PROJECT_ID" --config
 
 python3 scripts/assert-android-test-executed.py com.saif.mosque.data.outbox.DirectorySyncIntegrationTest
 python3 scripts/assert-android-test-executed.py com.saif.mosque.ui.InvitationDialogsTest
+python3 scripts/assert-android-test-executed.py com.saif.mosque.ui.PrototypeJoinFlowTest
 
 # Start a separate emulator with the proposed v2 rules and a migrated fixture.
 # Nothing is deployed; the ledger test must not run in the first suite.

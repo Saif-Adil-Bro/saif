@@ -265,4 +265,18 @@
     <string name="invitation_share_title">Invitation</string>
     <string name="invitation_share_help">Share with the invited member. They must verify the invited email.</string>
     <string name="invitation_copy">Copy</string>
+    <string name="join_storage_error">Unable to save this invitation on this device.</string>
+    <string name="join_auth_uncertain">Account status is uncertain. If an account exists, sign in to continue.</string>
+    <string name="join_verification_requested">A verification email was requested. Check your inbox before continuing.</string>
+    <string name="join_verification_uncertain">The verification request is unconfirmed. You can request another email.</string>
+    <string name="join_verify_email">Verify the invited email before continuing.</string>
+    <string name="join_redeem_uncertain">Membership is not confirmed. Check the invitation, email and internet, then retry.</string>
+    <string name="join_account_help">Use the invited email. Your password is not saved in this form.</string>
+    <string name="join_create_account">Create account</string>
+    <string name="join_have_account">I have an account</string>
+    <string name="join_verify_help">Open the verification email, then continue.</string>
+    <string name="join_resend">Resend email</string>
+    <string name="join_change_account">Change account</string>
+    <string name="join_complete">Membership confirmed. Close this screen and sign in.</string>
+    <string name="join_change_code">Change code</string>
 </resources>
