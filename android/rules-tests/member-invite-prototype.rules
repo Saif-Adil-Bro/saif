@@ -1,0 +1,363 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function platform() { return signedIn() && me().active == true && me().role == 'SUPERADMIN'; }
+    function sameTenant(mosqueId) {
+      return signedIn() && me().active == true && me().mosqueId == mosqueId;
+    }
+    function activeTenant(mosqueId) {
+      return sameTenant(mosqueId) && get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true;
+    }
+    function canDirectory(mosqueId, kind) {
+      return (platform() || (activeTenant(mosqueId) &&
+        (me().role in ['ADMIN', 'SECRETARY', 'TREASURER'] ||
+          (kind == 'donors' && me().role == 'CASHIER')))) &&
+        get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true;
+    }
+    function shortText(value, required) {
+      return value is string && value.size() <= 1000 && (!required || value.size() > 0);
+    }
+    function directoryFields(data, kind) {
+      return shortText(data.name, true) && data.active is bool &&
+        (kind == 'funds'
+          ? shortText(data.code, true) && shortText(data.get('nameEn', ''), false) && shortText(data.get('description', ''), false)
+          : shortText(data.get('phone', ''), false) && shortText(data.get('address', ''), false));
+    }
+    function counterCreate(mosqueId, kind) {
+      let data = request.resource.data;
+      let counter = kind == 'funds' ? 'fundCount' : 'donorCount';
+      let path = /databases/$(database)/documents/mosques/$(mosqueId)/$(kind)/$(data.directoryOpId);
+      return canDirectory(mosqueId, kind) &&
+        data.diff(resource.data).affectedKeys().hasOnly([counter, 'directoryOpId', 'directoryOpKind']) &&
+        data.directoryOpId is string && data.directoryOpId.size() > 0 &&
+        data.directoryOpKind == kind && resource.data[counter] is int &&
+        data[counter] == resource.data[counter] + 1 &&
+        !exists(path) && existsAfter(path) && getAfter(path).data.mosqueId == mosqueId;
+    }
+    function directoryCreate(mosqueId, kind, docId) {
+      let data = request.resource.data;
+      let mosque = /databases/$(database)/documents/mosques/$(mosqueId);
+      let counter = kind == 'funds' ? 'fundCount' : 'donorCount';
+      return canDirectory(mosqueId, kind) && data.mosqueId == mosqueId && directoryFields(data, kind) &&
+        (kind == 'funds'
+          ? data.keys().hasOnly(['mosqueId', 'name', 'code', 'nameEn', 'description', 'active', 'balance', 'balancePoisha', 'syncOpId', 'syncOwner']) && data.balance == 0 && (!data.keys().hasAny(['balancePoisha']) || (data.balancePoisha is int && data.balancePoisha == 0)) && (get(mosque).data.get('ledgerVersion', 0) != 2 || data.get('balancePoisha', -1) == 0)
+          : data.keys().hasOnly(['mosqueId', 'name', 'phone', 'address', 'active', 'totalDonated', 'totalDonatedPoisha', 'createdAt', 'syncOpId', 'syncOwner']) && data.totalDonated == 0 && (!data.keys().hasAny(['totalDonatedPoisha']) || (data.totalDonatedPoisha is int && data.totalDonatedPoisha == 0)) && (get(mosque).data.get('ledgerVersion', 0) != 2 || data.get('totalDonatedPoisha', -1) == 0) && data.createdAt is int) &&
+        (!data.keys().hasAny(['syncOpId', 'syncOwner']) ||
+          (data.syncOpId == docId && data.syncOwner == request.auth.uid)) &&
+        getAfter(mosque).data.directoryOpId == docId && getAfter(mosque).data.directoryOpKind == kind &&
+        getAfter(mosque).data[counter] == get(mosque).data[counter] + 1;
+    }
+    function editReceiptPair(mosqueId, kind, docId) {
+      let next = request.resource.data;
+      let receipt = /databases/$(database)/documents/mosques/$(mosqueId)/syncReceipts/$(next.lastSyncOpId);
+      return next.lastSyncOpId is string && next.lastSyncOpId.size() > 0 &&
+        next.lastSyncOwner == request.auth.uid && !exists(receipt) && existsAfter(receipt) &&
+        getAfter(receipt).data.uid == request.auth.uid && getAfter(receipt).data.kind == kind &&
+        getAfter(receipt).data.targetId == docId && getAfter(receipt).data.action in ['update', 'archive'];
+    }
+    function directoryUpdate(mosqueId, kind, docId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return canDirectory(mosqueId, kind) && resource.data.mosqueId == mosqueId &&
+        directoryFields(request.resource.data, kind) &&
+        changed.hasOnly(kind == 'funds' ? ['name', 'code', 'nameEn', 'description', 'active', 'lastSyncOpId', 'lastSyncOwner'] : ['name', 'phone', 'address', 'active', 'lastSyncOpId', 'lastSyncOwner']) &&
+        (!changed.hasAny(['lastSyncOpId', 'lastSyncOwner']) || editReceiptPair(mosqueId, kind, docId)) &&
+        (kind != 'donors' || !changed.hasAny(['active']) || request.resource.data.active == true || canDirectory(mosqueId, 'funds'));
+    }
+    function receiptCreate(mosqueId, opId) {
+      let data = request.resource.data;
+      let target = /databases/$(database)/documents/mosques/$(mosqueId)/$(data.kind)/$(data.targetId);
+      return data.keys().hasOnly(['uid', 'kind', 'targetId', 'action']) &&
+        data.keys().hasAll(['uid', 'kind', 'targetId', 'action']) && data.uid == request.auth.uid &&
+        data.kind in ['funds', 'donors'] && data.action in ['update', 'archive'] &&
+        data.targetId is string && data.targetId.size() > 0 && canDirectory(mosqueId, data.kind) &&
+        exists(target) && getAfter(target).data.lastSyncOpId == opId &&
+        getAfter(target).data.lastSyncOwner == request.auth.uid &&
+        (data.action != 'archive' || getAfter(target).data.active == false);
+    }
+    function canManageMember(mosqueId, target) {
+      return (platform() || (activeTenant(mosqueId) &&
+        me().role in ['ADMIN', 'PRESIDENT', 'SECRETARY'])) &&
+        get(/databases/$(database)/documents/mosques/$(mosqueId)).data.active == true &&
+        target.mosqueId == mosqueId && target.role != 'SUPERADMIN' &&
+        (target.role != 'ADMIN' || platform() || me().role == 'ADMIN');
+    }
+    function memberUpdate(uid) {
+      let old = resource.data;
+      let next = request.resource.data;
+      return canManageMember(old.mosqueId, old) &&
+        next.diff(old).affectedKeys().hasOnly(['name', 'phone', 'designation', 'role', 'active']) &&
+        shortText(next.name, true) && shortText(next.get('phone', ''), false) &&
+        shortText(next.get('designation', ''), false) && next.active is bool &&
+        next.role in ['ADMIN', 'PRESIDENT', 'SECRETARY', 'TREASURER', 'CASHIER', 'IMAM', 'MEMBER'] &&
+        (next.role != 'ADMIN' || platform() || me().role == 'ADMIN') &&
+        (uid != request.auth.uid || (next.role == old.role && next.active == old.active));
+    }
+    function memberCounterDelete(mosqueId) {
+      let next = request.resource.data;
+      let target = /databases/$(database)/documents/users/$(next.memberOpId);
+      return next.memberOpId is string && next.memberOpId.size() > 0 &&
+        next.memberOpId != request.auth.uid &&
+        next.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'memberOpId']) &&
+        resource.data.memberCount is int && resource.data.memberCount > 0 &&
+        next.memberCount == resource.data.memberCount - 1 &&
+        exists(target) && canManageMember(mosqueId, get(target).data) && !existsAfter(target);
+    }
+    function memberDelete(uid) {
+      let mosqueId = resource.data.mosqueId;
+      let mosque = /databases/$(database)/documents/mosques/$(mosqueId);
+      return uid != request.auth.uid && canManageMember(mosqueId, resource.data) &&
+        getAfter(mosque).data.memberOpId == uid &&
+        get(mosque).data.memberCount is int && get(mosque).data.memberCount > 0 &&
+        getAfter(mosque).data.memberCount == get(mosque).data.memberCount - 1;
+    }
+    // Ledger v2 is opt-in only after a coordinated backup, audit, migration and writer freeze.
+    function mosquePath(m) { return /databases/$(database)/documents/mosques/$(m); }
+    function fundPath(m, id) { return /databases/$(database)/documents/mosques/$(m)/funds/$(id); }
+    function donorPath(m, id) { return /databases/$(database)/documents/mosques/$(m)/donors/$(id); }
+    function opPath(m, k, id) { return /databases/$(database)/documents/mosques/$(m)/$(k)/$(id); }
+    function canMoney(m, k) {
+      return request.auth != null && me().active == true &&
+        (me().role == 'SUPERADMIN' || (me().mosqueId == m &&
+          (me().role in ['ADMIN', 'SECRETARY', 'TREASURER'] ||
+            (k in ['contributions', 'expenses'] && me().role == 'CASHIER')))) &&
+        get(mosquePath(m)).data.active == true && get(mosquePath(m)).data.get('ledgerVersion', 0) == 2;
+    }
+    function text(x, required) {
+      return x is string && x.size() <= 1000 && (!required || x.size() > 0);
+    }
+    function validId(x) { return x is string && x.size() > 0 && x.size() <= 1500 && x.matches('^[^/]+$'); }
+    function money(cents, taka) {
+      return cents is int && cents >= 0 && cents <= 900000000000000 &&
+        taka is number && taka == cents / 100.0;
+    }
+    function amount(op) {
+      return op.amountPoisha is int && op.amountPoisha > 0 && op.amountPoisha <= 900000000000000 &&
+        money(op.amountPoisha, op.amount);
+    }
+    function shape(op, m, k) {
+      return op.mosqueId == m && op.createdBy == request.auth.uid && amount(op) &&
+        op.date is string && op.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$') &&
+        text(op.note, false) && op.createdAt is int &&
+        (k == 'contributions' ?
+          op.keys().hasOnly(['mosqueId','amount','amountPoisha','accountId','donorId','donorName','date','note','receiptNo','createdBy','createdAt']) &&
+          validId(op.accountId) && op.donorId is string && (op.donorId == '' || validId(op.donorId)) &&
+          text(op.donorName, true) && text(op.receiptNo, false)
+         : k == 'expenses' ?
+          op.keys().hasOnly(['mosqueId','amount','amountPoisha','accountId','title','category','paidTo','date','note','receiptNo','status','approvedBy','createdBy','createdAt']) &&
+          validId(op.accountId) && text(op.title, true) && text(op.category, false) && text(op.paidTo, false) &&
+          text(op.receiptNo, false) && op.status == 'approved' && op.approvedBy == ''
+         : k == 'transfers' &&
+          op.keys().hasOnly(['mosqueId','amount','amountPoisha','fromAccountId','toAccountId','date','note','createdBy','createdAt']) &&
+          validId(op.fromAccountId) && validId(op.toAccountId) && op.fromAccountId != op.toAccountId);
+    }
+    function fundDelta(m, id, k, opId, delta) {
+      let path = fundPath(m, id);
+      let old = get(path).data;
+      let next = getAfter(path).data;
+      return old.mosqueId == m && old.active == true && money(old.balancePoisha, old.balance) &&
+        money(next.balancePoisha, next.balance) && next.balancePoisha == old.balancePoisha + delta &&
+        next.ledgerOpId == opId && next.ledgerOpKind == k &&
+        next.diff(old).affectedKeys().hasOnly(['balance','balancePoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function mosqueDelta(m, k, opId, delta) {
+      let path = mosquePath(m);
+      let old = get(path).data;
+      let next = getAfter(path).data;
+      return old.active == true && money(old.totalBalancePoisha, old.totalBalance) &&
+        money(next.totalBalancePoisha, next.totalBalance) && next.totalBalancePoisha == old.totalBalancePoisha + delta &&
+        next.ledgerOpId == opId && next.ledgerOpKind == k &&
+        next.diff(old).affectedKeys().hasOnly(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function donorDelta(m, id, opId, cents, name) {
+      let path = donorPath(m, id);
+      let old = get(path).data;
+      let next = getAfter(path).data;
+      return old.mosqueId == m && old.active == true && old.name == name &&
+        money(old.totalDonatedPoisha, old.totalDonated) && money(next.totalDonatedPoisha, next.totalDonated) &&
+        next.totalDonatedPoisha == old.totalDonatedPoisha + cents && next.ledgerOpId == opId &&
+        next.ledgerOpKind == 'contributions' &&
+        next.diff(old).affectedKeys().hasOnly(['totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind']);
+    }
+    function createLedger(m, k, id) {
+      let op = request.resource.data;
+      return canMoney(m, k) && shape(op, m, k) &&
+        (k == 'contributions' ?
+          fundDelta(m, op.accountId, k, id, op.amountPoisha) && mosqueDelta(m, k, id, op.amountPoisha) &&
+          (op.donorId == '' || donorDelta(m, op.donorId, id, op.amountPoisha, op.donorName))
+         : k == 'expenses' ?
+          fundDelta(m, op.accountId, k, id, -op.amountPoisha) && mosqueDelta(m, k, id, -op.amountPoisha)
+         : fundDelta(m, op.fromAccountId, k, id, -op.amountPoisha) &&
+          fundDelta(m, op.toAccountId, k, id, op.amountPoisha));
+    }
+    function freshOp(m, k, id) {
+      let path = opPath(m, k, id);
+      return k in ['contributions','expenses','transfers'] && !exists(path) && existsAfter(path);
+    }
+    function fundUpdate(m, id) {
+      let next = request.resource.data;
+      let k = next.ledgerOpKind;
+      let opId = next.ledgerOpId;
+      let op = getAfter(opPath(m, k, opId)).data;
+      return validId(opId) && freshOp(m, k, opId) &&
+        (k == 'contributions' && op.accountId == id && fundDelta(m, id, k, opId, op.amountPoisha) ||
+         k == 'expenses' && op.accountId == id && fundDelta(m, id, k, opId, -op.amountPoisha) ||
+         k == 'transfers' && op.fromAccountId == id && fundDelta(m, id, k, opId, -op.amountPoisha) ||
+         k == 'transfers' && op.toAccountId == id && fundDelta(m, id, k, opId, op.amountPoisha));
+    }
+    function mosqueUpdate(m) {
+      let next = request.resource.data;
+      let k = next.ledgerOpKind;
+      let opId = next.ledgerOpId;
+      let op = getAfter(opPath(m, k, opId)).data;
+      return validId(opId) && k in ['contributions','expenses'] && freshOp(m, k, opId) &&
+        mosqueDelta(m, k, opId, k == 'contributions' ? op.amountPoisha : -op.amountPoisha);
+    }
+    function donorUpdate(m, id) {
+      let next = request.resource.data;
+      let opId = next.ledgerOpId;
+      let op = getAfter(opPath(m, 'contributions', opId)).data;
+      return validId(opId) && next.ledgerOpKind == 'contributions' &&
+        freshOp(m, 'contributions', opId) && op.donorId == id &&
+        donorDelta(m, id, opId, op.amountPoisha, op.donorName);
+    }
+    // Isolated Spark onboarding prototype. Not configured for deployment.
+    function invitePath(m, id) { return /databases/$(database)/documents/mosques/$(m)/invitations/$(id); }
+    function claimPath(m, email) { return /databases/$(database)/documents/mosques/$(m)/memberClaims/$(email); }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function validInviteIssuer(m, inv) {
+      let issuer = get(userPath(inv.createdBy)).data;
+      return issuer.active == true &&
+        (issuer.role == 'SUPERADMIN' || (issuer.mosqueId == m &&
+          issuer.role in ['ADMIN','PRESIDENT','SECRETARY'] && (inv.role != 'ADMIN' || issuer.role == 'ADMIN')));
+    }
+    function verifiedInvite(m, id) {
+      let inv = get(invitePath(m, id)).data;
+      return signedIn() && request.auth.token.get('email_verified', false) == true &&
+        request.auth.token.get('email', '') is string &&
+        request.auth.token.email == inv.email && inv.status == 'pending' &&
+        inv.role in ['ADMIN','PRESIDENT','SECRETARY','TREASURER','CASHIER','IMAM','MEMBER'] &&
+        validId(inv.createdBy) && validInviteIssuer(m, inv) &&
+        inv.mosqueId == m && inv.expiresAt is timestamp && request.time < inv.expiresAt;
+    }
+    function inviteCreate(m) {
+      let inv = request.resource.data;
+      return inv.keys().hasOnly(['mosqueId','email','name','phone','role','designation','createdBy','status','expiresAt']) &&
+        inv.keys().hasAll(['mosqueId','email','name','phone','role','designation','createdBy','status','expiresAt']) &&
+        inv.mosqueId == m && canManageMember(m, inv) &&
+        (inv.role != 'ADMIN' || platform() || me().role == 'ADMIN') &&
+        inv.role in ['ADMIN','PRESIDENT','SECRETARY','TREASURER','CASHIER','IMAM','MEMBER'] &&
+        inv.email is string && inv.email.size() > 3 && inv.email.size() <= 254 && inv.email == inv.email.lower() &&
+        inv.email.matches('^[^@/]+@[^@/]+$') &&
+        shortText(inv.name, true) && shortText(inv.phone, false) && shortText(inv.designation, false) &&
+        inv.createdBy == request.auth.uid && inv.status == 'pending' && inv.expiresAt is timestamp &&
+        inv.expiresAt > request.time && inv.expiresAt <= request.time + duration.value(7, 'd');
+    }
+    function inviteAccept(m, id) {
+      let old = resource.data;
+      let next = request.resource.data;
+      let user = userPath(request.auth.uid);
+      return verifiedInvite(m, id) && !exists(user) &&
+        next.diff(old).affectedKeys().hasOnly(['status','acceptedBy']) &&
+        next.status == 'accepted' && next.acceptedBy == request.auth.uid &&
+        existsAfter(user) && getAfter(user).data.inviteId == id && getAfter(user).data.mosqueId == m;
+    }
+    function inviteRevoke(m) {
+      return canManageMember(m, resource.data) && resource.data.status == 'pending' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status == 'revoked';
+    }
+    function inviteProfileCreate(uid) {
+      let profile = request.resource.data;
+      let m = profile.mosqueId;
+      let id = profile.inviteId;
+      let invite = invitePath(m, id);
+      let parent = mosquePath(m);
+      let inv = get(invite).data;
+      let claim = claimPath(m, profile.email);
+      return request.auth != null && uid == request.auth.uid &&
+        profile.keys().hasOnly(['name','email','phone','role','mosqueId','designation','active','createdAt','inviteId']) &&
+        profile.keys().hasAll(['name','email','phone','role','mosqueId','designation','active','createdAt','inviteId']) &&
+        validId(m) && validId(id) && verifiedInvite(m, id) &&
+        profile.name == inv.name && profile.email == inv.email && profile.phone == inv.phone &&
+        profile.role == inv.role && profile.designation == inv.designation && profile.active == true && profile.createdAt is int &&
+        get(parent).data.active == true && get(parent).data.memberCount is int &&
+        getAfter(invite).data.status == 'accepted' && getAfter(invite).data.acceptedBy == uid &&
+        !exists(claim) && getAfter(claim).data.uid == uid && getAfter(claim).data.inviteId == id &&
+        getAfter(parent).data.memberOpId == uid && getAfter(parent).data.memberCount == get(parent).data.memberCount + 1;
+    }
+    function memberClaimCreate(m, email) {
+      let claim = request.resource.data;
+      let uid = request.auth.uid;
+      let user = userPath(uid);
+      return signedIn() && claim.keys().hasOnly(['uid','inviteId']) && claim.keys().hasAll(['uid','inviteId']) &&
+        claim.uid == uid && validId(claim.inviteId) && verifiedInvite(m, claim.inviteId) &&
+        get(invitePath(m, claim.inviteId)).data.email == email && !exists(user) && existsAfter(user) &&
+        getAfter(user).data.inviteId == claim.inviteId && getAfter(user).data.mosqueId == m &&
+        getAfter(invitePath(m, claim.inviteId)).data.status == 'accepted';
+    }
+    function memberCounterInvite(m) {
+      let next = request.resource.data;
+      let uid = request.auth.uid;
+      let user = userPath(uid);
+      return signedIn() && next.diff(resource.data).affectedKeys().hasOnly(['memberCount','memberOpId']) &&
+        next.memberOpId == uid && resource.data.active == true && resource.data.memberCount is int &&
+        next.memberCount == resource.data.memberCount + 1 && !exists(user) && existsAfter(user) &&
+        getAfter(user).data.mosqueId == m;
+    }
+    match /users/{uid} {
+      // Self-read permits login to report an inactive profile; tenant queries must
+      // constrain mosqueId and cannot read profiles from a different tenant.
+      allow read: if signedIn() && (request.auth.uid == uid || platform() || activeTenant(resource.data.mosqueId));
+      // Creation still requires the trusted provisioning workflow.
+      allow create: if inviteProfileCreate(uid);
+      allow update: if signedIn() && memberUpdate(uid);
+      allow delete: if signedIn() && memberDelete(uid);
+    }
+    match /mosques/{mosqueId} {
+      // Members may read their own inactive mosque to receive the correct login error.
+      allow read: if platform() || sameTenant(mosqueId);
+      allow create, delete: if false;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind'])
+        ? mosqueUpdate(mosqueId)
+        : ((request.resource.data.diff(resource.data).affectedKeys().hasAny(['memberCount','memberOpId']) && memberCounterInvite(mosqueId))
+        || (platform() && resource.data.get('ledgerMigration', '') != 'frozen'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'nameEn', 'address', 'district', 'upazila', 'phone', 'email',
+          'establishedYear', 'registrationNo', 'active'
+        ])
+        && (mosqueId != 'demo-mosque-0001' || request.resource.data.active == true))
+        || counterCreate(mosqueId, 'funds') || counterCreate(mosqueId, 'donors')
+        || memberCounterDelete(mosqueId));
+      match /memberClaims/{email} {
+        allow get: if signedIn() && ((request.auth.token.get('email_verified', false) == true &&
+          request.auth.token.get('email', '') == email) || canDirectory(mosqueId, 'funds'));
+        allow list: if canDirectory(mosqueId, 'funds');
+        allow create: if memberClaimCreate(mosqueId, email);
+        allow update, delete: if false;
+      }
+      match /invitations/{id} {
+        allow get: if (signedIn() && request.auth.token.get('email_verified', false) == true &&
+          request.auth.token.get('email', '') is string && request.auth.token.email == resource.data.email)
+          || canManageMember(mosqueId, resource.data);
+        allow list: if canManageMember(mosqueId, resource.data);
+        allow create: if inviteCreate(mosqueId);
+        allow update: if inviteAccept(mosqueId, id) || inviteRevoke(mosqueId);
+        allow delete: if false;
+      }
+      match /{collection}/{doc} {
+        allow read: if collection in ['funds', 'donors', 'contributions', 'expenses', 'transfers', 'syncReceipts']
+          && (platform() || activeTenant(mosqueId));
+        allow create: if (collection in ['funds', 'donors'] && directoryCreate(mosqueId, collection, doc))
+          || (collection == 'syncReceipts' && receiptCreate(mosqueId, doc))
+          || (collection in ['contributions', 'expenses', 'transfers'] && createLedger(mosqueId, collection, doc));
+        allow update: if collection in ['funds', 'donors'] &&
+          (request.resource.data.diff(resource.data).affectedKeys().hasAny(['balance','balancePoisha','totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind'])
+            ? (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc))
+            : directoryUpdate(mosqueId, collection, doc));
+        allow delete: if false;
+      }
+    }
+  }
+}

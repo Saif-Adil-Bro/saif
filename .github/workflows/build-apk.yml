@@ -23,6 +23,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: android/functions/package-lock.json
+
+      - name: Test server-side ledger
+        working-directory: android/functions
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          node --test ../scripts/audit-ledger.test.mjs ../scripts/migrate-ledger.test.mjs
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -70,7 +84,7 @@ jobs:
         working-directory: android
         run: |
           set -o pipefail
-          if gradle --no-daemon --console=plain assembleDebug 2>&1 | tee /tmp/build.log; then
+          if gradle --no-daemon --console=plain testDebugUnitTest assembleDebug assembleDebugAndroidTest 2>&1 | tee /tmp/build.log; then
             echo "err=" >> "$GITHUB_OUTPUT"
           else
             # capture the first compile/config error lines so they surface in the
@@ -109,6 +123,102 @@ jobs:
           name: mosque-hisab-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+
+  firestore-rules:
+    name: Firestore rules emulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: android/rules-tests/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install test dependencies
+        working-directory: android/rules-tests
+        run: npm ci --ignore-scripts
+      - name: Run rules tests in emulator
+        working-directory: android/rules-tests
+        run: |
+          set -o pipefail
+          npx --yes firebase-tools@13.35.1 emulators:exec --project demo-mosque-rules --config ../firebase.json --only firestore 'npm test' 2>&1 | tee /tmp/firestore-rules-test.log
+      - name: Report rules test failures
+        if: failure()
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          log = Path('/tmp/firestore-rules-test.log')
+          if log.exists():
+              full = log.read_text(errors='replace')
+              lines = full.splitlines()
+              failures = [i for i, line in enumerate(lines) if line.startswith('not ok ')]
+              text = '\n'.join('\n'.join(lines[i:i+55]) for i in failures)[:10000] if failures else full[-3500:]
+              print('::error::Rules test failures: ' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PYCODE
+
+  android-device-tests:
+    name: Android emulator tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+      - name: Write google-services.json from secret
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+      - name: Enable hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run offline sync, SQLite and responsive component tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash android/scripts/run-sync-emulator-tests.sh
+
+      - name: Report emulator test failures
+        if: failure()
+        run: |
+          python3 - <<'PYCODE'
+          import glob, xml.etree.ElementTree as ET
+          paths = glob.glob('android/app/build/outputs/androidTest-results/**/*.xml', recursive=True)
+          for path in paths:
+              try:
+                  root = ET.parse(path).getroot()
+                  for case in root.iter('testcase'):
+                      for failure in case.findall('failure') + case.findall('error'):
+                          text = (case.attrib.get('classname', '') + '.' + case.attrib.get('name', '') + ': ' + (failure.text or failure.attrib.get('message', '')))[:12000]
+                          print('::error::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+              except (OSError, ET.ParseError):
+                  pass
+          from pathlib import Path
+          for filename in ['/tmp/android-initial-test.log', '/tmp/ledger-migration-test.log', '/tmp/ledger-prototype-test.log', '/tmp/ledger-correction-test.log', '/tmp/member-invitation-test.log']:
+              log = Path(filename)
+              if log.exists():
+                  tail = log.read_text(errors='replace')[-9000:]
+                  print('::error::Ledger test log tail: ' + tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PYCODE
 
   # Optional: signed release APK. Requires 3 more secrets (see README):
   #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_PASSWORD

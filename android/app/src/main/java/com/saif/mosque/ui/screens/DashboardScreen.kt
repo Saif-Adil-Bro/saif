@@ -2,6 +2,8 @@
 
 package com.saif.mosque.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -54,75 +56,86 @@ class DashboardViewModel(repo: DashboardRepository, mosqueId: String) : ViewMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DashboardScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
     val vm: DashboardViewModel = viewModel { DashboardViewModel(container.dashboardRepository, mosqueId) }
     val state by vm.state.collectAsStateWithLifecycle()
 
-    StateBox(state, onRetry = {}) { data ->
+    StateBox(state) { data ->
         LazyColumn(
-            Modifier.fillMaxSize().padding(16.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatCard(stringResource(R.string.total_balance), Format.money(data.totalBalance),
-                        modifier = Modifier.weight(1f))
-                    StatCard(stringResource(R.string.monthly_income), Format.money(data.monthlyIncome),
-                        modifier = Modifier.weight(1f),
-                        valueColor = MaterialTheme.colorScheme.primary)
-                    StatCard(stringResource(R.string.monthly_expense), Format.money(data.monthlyExpense),
-                        modifier = Modifier.weight(1f),
-                        valueColor = MaterialTheme.colorScheme.error)
-                    StatCard(stringResource(R.string.active_donors), Format.bn(data.activeDonors),
-                        modifier = Modifier.weight(1f))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.welcome_user, user.name), style = MaterialTheme.typography.headlineSmall)
+                    Text(stringResource(R.string.account_overview), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            item { SectionTitle(stringResource(R.string.fund_balances)) }
-            if (data.fundBalances.isEmpty()) {
-                item { EmptyBox() }
+            item {
+                androidx.compose.material3.Surface(shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.primary) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(
+                            listOf(com.saif.mosque.ui.theme.GreenDark, com.saif.mosque.ui.theme.GreenPrimary)))
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(R.string.total_balance), Modifier.weight(1f),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.78f))
+                                androidx.compose.material3.Icon(
+                                    androidx.compose.material.icons.Icons.Filled.AccountBalanceWallet,
+                                    contentDescription = null,
+                                    tint = androidx.compose.ui.graphics.Color(0xFFE9D3A9))
+                            }
+                            Text(Format.money(data.totalBalance), style = MaterialTheme.typography.headlineMedium,
+                                color = androidx.compose.ui.graphics.Color.White)
+                        }
+                    }
+                }
             }
+            item {
+                com.saif.mosque.ui.components.StatsGrid(listOf(
+                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.monthly_income), Format.money(data.monthlyIncome)),
+                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.monthly_expense), Format.money(data.monthlyExpense), MaterialTheme.colorScheme.error),
+                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.active_donors), Format.bn(data.activeDonors)),
+                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.fund_count), Format.bn(data.fundCount))
+                ))
+            }
+            item { SectionTitle(stringResource(R.string.fund_balances)) }
+            if (data.fundBalances.isEmpty()) item { EmptyBox() }
             items(data.fundBalances, key = { it.first.id }) { (fund, balance) ->
                 val max = data.fundBalances.maxOfOrNull { it.second }?.takeIf { it > 0 } ?: 1.0
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface)) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${fund.code} — ${fund.name}", Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyLarge)
-                            MoneyText(balance)
-                        }
-                        LinearProgressIndicator(
-                            progress = { (balance / max).toFloat().coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-                        )
+                Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${fund.code} · ${fund.name}", style = MaterialTheme.typography.titleMedium)
+                        MoneyText(balance)
+                        LinearProgressIndicator(progress = { (balance / max).toFloat().coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(5.dp),
+                            trackColor = MaterialTheme.colorScheme.primaryContainer)
                     }
                 }
             }
             item { SectionTitle(stringResource(R.string.recent_transactions)) }
-            if (data.recent.isEmpty()) {
-                item { EmptyBox(stringResource(R.string.no_transactions)) }
-            }
+            if (data.recent.isEmpty()) item { EmptyBox(stringResource(R.string.no_transactions)) }
             items(data.recent, key = { it.type + it.id }) { tx ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface)) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(tx.title, style = MaterialTheme.typography.bodyLarge)
-                            Text(Format.date(tx.date), style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        MoneyText(
-                            tx.amount,
-                            color = if (tx.amount >= 0) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
+                com.saif.mosque.ui.components.RecordCard(
+                    title = if (tx.type == "transfer") stringResource(R.string.transfers) else tx.title,
+                    supporting = Format.date(tx.date),
+                    amount = Format.money(if (tx.type == "transfer") kotlin.math.abs(tx.amount) else tx.amount),
+                    amountColor = when (tx.type) {
+                        "expense" -> MaterialTheme.colorScheme.error
+                        "contribution" -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurface
+                    })
             }
-            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -79,6 +80,7 @@ import java.time.LocalDate
 
 class ContributionsViewModel(
     private val repo: LedgerRepository,
+    private val queue: com.saif.mosque.data.ledger.LedgerQueue,
     private val mosqueId: String,
     private val user: AppUser
 ) : ViewModel() {
@@ -100,15 +102,32 @@ class ContributionsViewModel(
 
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
+    val pending = queue.store.observe(user.id, mosqueId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun retry(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.retry(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
+    fun discard(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.discard(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
 
-    fun add(c: Contribution) = mutate { repo.addContribution(mosqueId, c, user.id) }
-    fun update(old: Contribution, new: Contribution) = mutate { repo.updateContribution(mosqueId, old, new, user.id) }
-    fun delete(c: Contribution) = mutate { repo.deleteContribution(mosqueId, c) }
+    fun add(c: Contribution, done: (Msg?) -> Unit) = mutate(done, local = true) {
+        queue.enqueue(com.saif.mosque.data.ledger.PrototypeLedgerDraft(id = java.util.UUID.randomUUID().toString(), uid = user.id, mosqueId = mosqueId,
+            kind = "contributions", amountPoisha = com.saif.mosque.data.ledger.LedgerMath.poisha(c.amount, true),
+            sourceFundId = c.accountId, donorId = c.donorId, donorName = c.donorName,
+            receiptNo = c.receiptNo, date = c.date, note = c.note, createdAt = System.currentTimeMillis()))
+    }
+    fun update(old: Contribution, new: Contribution, done: (Msg?) -> Unit) = mutate(done) { repo.updateContribution(mosqueId, old, new, user.id) }
+    fun delete(c: Contribution) = mutate(null) { repo.deleteContribution(mosqueId, c) }
 
-    private fun mutate(block: suspend () -> Unit) {
+    private fun mutate(done: ((Msg?) -> Unit)?, local: Boolean = false, block: suspend () -> Unit) {
         viewModelScope.launch {
-            try { block(); _messages.emit(Msg.Res(R.string.saved_ok)) }
-            catch (e: Exception) { _messages.emit(Msg.Text(e.message ?: "error")) }
+            try { block(); done?.invoke(null); _messages.emit(Msg.Res(if (local) R.string.local_pending_saved else R.string.saved_ok)) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                val error = Msg.Text(e.message ?: "error")
+                if (done != null) done(error) else _messages.emit(error)
+            }
         }
     }
 }
@@ -116,7 +135,10 @@ class ContributionsViewModel(
 @Composable
 fun ContributionsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
-    val vm: ContributionsViewModel = viewModel { ContributionsViewModel(container.ledgerRepository, mosqueId, user) }
+    val vm: ContributionsViewModel = viewModel { ContributionsViewModel(container.ledgerRepository, container.ledgerQueue, mosqueId, user) }
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canEdit = vm.canEdit && !offline
+    val pending by vm.pending.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val donors by vm.donors.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -126,6 +148,8 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     var fundFilter by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Contribution?>(null) }
     var deleting by remember { mutableStateOf<Contribution?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -137,6 +161,7 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = Contribution(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_contribution))
@@ -144,15 +169,19 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { (all, funds) ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+        com.saif.mosque.ui.components.PendingLedger(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+        StateBox(state) { (all, funds) ->
             val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", ym.first, ym.second)
             val list = all
                 .filter { it.date.startsWith(monthPrefix) }
                 .filter { fundFilter == null || it.accountId == fundFilter }
 
             LazyColumn(
-                Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically,
@@ -169,7 +198,8 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                         }) { Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month)) }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = fundFilter == null, onClick = { fundFilter = null },
                             label = { Text(stringResource(R.string.all_funds)) })
                         funds.forEach { f ->
@@ -181,28 +211,16 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                 if (list.isEmpty()) item { EmptyBox() }
                 items(list, key = { it.id }) { c ->
                     val fundName = funds.firstOrNull { it.id == c.accountId }?.let { "${it.code} ${it.name}" } ?: "—"
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(c.donorName.ifBlank { "—" }, style = MaterialTheme.typography.bodyLarge)
-                                Text("$fundName • ${Format.date(c.date)}" +
-                                    (if (c.receiptNo.isNotBlank()) " • #${c.receiptNo}" else ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            MoneyText(c.amount, color = MaterialTheme.colorScheme.primary)
-                            if (vm.canEdit) {
-                                IconButton(onClick = { editing = c }) { Icon(Icons.Filled.Edit, contentDescription = null) }
-                                IconButton(onClick = { deleting = c }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+                    com.saif.mosque.ui.components.RecordCard(
+                        title = c.donorName.ifBlank { "—" },
+                        supporting = listOf(fundName, Format.date(c.date), c.receiptNo.takeIf { it.isNotBlank() }?.let { "#$it" }).filterNotNull().joinToString(" · "),
+                        amount = Format.money(c.amount), amountColor = MaterialTheme.colorScheme.primary,
+                        onEdit = if (canEdit) ({ editing = c }) else null,
+                        onDelete = if (canEdit) ({ deleting = c }) else null)
                 }
             }
+        }
+    }
         }
     }
 
@@ -212,25 +230,37 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
             funds = (state as? UiState.Success)?.data?.second ?: emptyList(),
             donors = donors,
             isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            saving = saving, saveError = saveError,
+            onDismiss = { editing = null; saveError = null },
             onSave = { c ->
-                if (target.id.isEmpty()) vm.add(c) else vm.update(target, c.copy(id = target.id))
-                editing = null
+                if (!saving) {
+                    saving = true; saveError = null
+                    val done: (Msg?) -> Unit = { result ->
+                        saving = false
+                        if (result == null) editing = null else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                    if (target.id.isEmpty()) vm.add(c, done) else vm.update(target, c.copy(id = target.id), done)
+                }
             }
         )
     }
     deleting?.let { c ->
         ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_question),
-            onConfirm = { vm.delete(c) }, onDismiss = { deleting = null })
+            onConfirm = { vm.delete(c) }, onDismiss = { deleting = null }, enabled = canEdit)
     }
 }
 
 @Composable
-private fun ContributionFormDialog(
+internal fun ContributionFormDialog(
     initial: Contribution,
     funds: List<Fund>,
     donors: List<Donor>,
     isNew: Boolean,
+    saving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: (Contribution) -> Unit
 ) {
@@ -243,10 +273,10 @@ private fun ContributionFormDialog(
     var note by remember { mutableStateOf(initial.note) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val donorOptions = donors.map { it.id to it.name } + ("" to stringResource(R.string.donor_name_free))
+    val donorOptions = donors.filter { it.active || it.id == initial.donorId }.map { it.id to it.name } + ("" to stringResource(R.string.donor_name_free))
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_contribution else R.string.edit_contribution)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -254,26 +284,30 @@ private fun ContributionFormDialog(
                     label = stringResource(R.string.donor),
                     options = donorOptions,
                     selected = donorId,
-                    onSelect = { donorId = it }
+                    onSelect = { donorId = it }, enabled = !saving
                 )
                 if (donorId.isBlank()) {
-                    LabeledField(stringResource(R.string.donor_name_free), donorName, { donorName = it }, error = error)
+                    LabeledField(stringResource(R.string.donor_name_free), donorName, { donorName = it }, error = error, enabled = !saving)
                 }
                 DropdownField(
                     label = stringResource(R.string.account),
-                    options = funds.map { it.id to "${it.code} — ${it.name}" },
+                    options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
-                    onSelect = { accountId = it }
+                    onSelect = { accountId = it }, enabled = !saving
                 )
                 LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal)
-                DatePickerField(stringResource(R.string.date), date, { date = it })
-                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it })
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false)
+                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                saveError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
                 if (donorId.isBlank() && Validators.required(donorName) != null) { error = "required"; return@TextButton }
                 if (accountId.isBlank()) { error = "required"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
@@ -287,8 +321,8 @@ private fun ContributionFormDialog(
                     receiptNo = receipt.trim(),
                     note = note.trim()
                 ))
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -79,6 +80,7 @@ import java.time.LocalDate
 
 class ExpensesViewModel(
     private val repo: LedgerRepository,
+    private val queue: com.saif.mosque.data.ledger.LedgerQueue,
     private val mosqueId: String,
     private val user: AppUser
 ) : ViewModel() {
@@ -93,17 +95,32 @@ class ExpensesViewModel(
 
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
+    val pending = queue.store.observe(user.id, mosqueId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun retry(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.retry(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
+    fun discard(row: com.saif.mosque.data.ledger.PrototypeQueuedLedger) = viewModelScope.launch {
+        try { queue.discard(row.draft) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { _messages.emit(Msg.Res(R.string.local_save_failed)) }
+    }
 
-    fun add(e: Expense) = mutate { repo.addExpense(mosqueId, e, user.id) }
-    fun update(old: Expense, e: Expense) = mutate { repo.updateExpense(mosqueId, old, e, user.id) }
-    fun delete(e: Expense) = mutate { repo.deleteExpense(mosqueId, e) }
+    fun add(e: Expense, done: (Msg?) -> Unit) = mutate(done, local = true) {
+        queue.enqueue(com.saif.mosque.data.ledger.PrototypeLedgerDraft(id = java.util.UUID.randomUUID().toString(), uid = user.id, mosqueId = mosqueId,
+            kind = "expenses", amountPoisha = com.saif.mosque.data.ledger.LedgerMath.poisha(e.amount, true),
+            sourceFundId = e.accountId, title = e.title, category = e.category, paidTo = e.paidTo,
+            receiptNo = e.receiptNo, date = e.date, note = e.note, createdAt = System.currentTimeMillis()))
+    }
+    fun update(old: Expense, e: Expense, done: (Msg?) -> Unit) = mutate(done) { repo.updateExpense(mosqueId, old, e, user.id) }
+    fun delete(e: Expense) = mutate(null) { repo.deleteExpense(mosqueId, e) }
 
-    private fun mutate(block: suspend () -> Unit) {
+    private fun mutate(done: ((Msg?) -> Unit)?, local: Boolean = false, block: suspend () -> Unit) {
         viewModelScope.launch {
-            try { block(); _messages.emit(Msg.Res(R.string.saved_ok)) }
+            try { block(); done?.invoke(null); _messages.emit(Msg.Res(if (local) R.string.local_pending_saved else R.string.saved_ok)) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) {
-                _messages.emit(if (e is InsufficientBalanceException) Msg.Res(R.string.insufficient_balance)
-                    else Msg.Text(e.message ?: "error"))
+                val error = if (e is InsufficientBalanceException) Msg.Res(R.string.insufficient_balance)
+                    else Msg.Text(e.message ?: "error")
+                if (done != null) done(error) else _messages.emit(error)
             }
         }
     }
@@ -112,7 +129,10 @@ class ExpensesViewModel(
 @Composable
 fun ExpensesScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
-    val vm: ExpensesViewModel = viewModel { ExpensesViewModel(container.ledgerRepository, mosqueId, user) }
+    val vm: ExpensesViewModel = viewModel { ExpensesViewModel(container.ledgerRepository, container.ledgerQueue, mosqueId, user) }
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canEdit = vm.canEdit && !offline
+    val pending by vm.pending.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -121,6 +141,8 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
     var fundFilter by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Expense?>(null) }
     var deleting by remember { mutableStateOf<Expense?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -132,6 +154,7 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (vm.canEdit) FloatingActionButton(onClick = { editing = Expense(date = Format.todayIso()) }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_expense))
@@ -139,15 +162,19 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { (all, funds) ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+        com.saif.mosque.ui.components.PendingLedger(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+        StateBox(state) { (all, funds) ->
             val monthPrefix = String.format(java.util.Locale.US, "%04d-%02d", ym.first, ym.second)
             val list = all
                 .filter { it.date.startsWith(monthPrefix) }
                 .filter { fundFilter == null || it.accountId == fundFilter }
 
             LazyColumn(
-                Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically,
@@ -164,7 +191,8 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
                         }) { Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month)) }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = fundFilter == null, onClick = { fundFilter = null },
                             label = { Text(stringResource(R.string.all_funds)) })
                         funds.forEach { f ->
@@ -176,29 +204,16 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
                 if (list.isEmpty()) item { EmptyBox() }
                 items(list, key = { it.id }) { e ->
                     val fundName = funds.firstOrNull { it.id == e.accountId }?.let { "${it.code} ${it.name}" } ?: "—"
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(e.title, style = MaterialTheme.typography.bodyLarge)
-                                Text("$fundName • ${Format.date(e.date)}" +
-                                    (if (e.paidTo.isNotBlank()) " • ${e.paidTo}" else "") +
-                                    (if (e.receiptNo.isNotBlank()) " • #${e.receiptNo}" else ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            MoneyText(e.amount, color = MaterialTheme.colorScheme.error)
-                            if (vm.canEdit) {
-                                IconButton(onClick = { editing = e }) { Icon(Icons.Filled.Edit, contentDescription = null) }
-                                IconButton(onClick = { deleting = e }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+                    com.saif.mosque.ui.components.RecordCard(
+                        title = e.title,
+                        supporting = listOf(fundName, Format.date(e.date), e.paidTo.takeIf { it.isNotBlank() }, e.receiptNo.takeIf { it.isNotBlank() }?.let { "#$it" }).filterNotNull().joinToString(" · "),
+                        amount = Format.money(e.amount), amountColor = MaterialTheme.colorScheme.error,
+                        onEdit = if (canEdit) ({ editing = e }) else null,
+                        onDelete = if (canEdit) ({ deleting = e }) else null)
                 }
             }
+        }
+    }
         }
     }
 
@@ -207,24 +222,36 @@ fun ExpensesScreen(container: AppContainer, user: AppUser) {
             initial = target,
             funds = (state as? UiState.Success)?.data?.second ?: emptyList(),
             isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            saving = saving, saveError = saveError,
+            onDismiss = { editing = null; saveError = null },
             onSave = { e ->
-                if (target.id.isEmpty()) vm.add(e) else vm.update(target, e.copy(id = target.id))
-                editing = null
+                if (!saving) {
+                    saving = true; saveError = null
+                    val done: (Msg?) -> Unit = { result ->
+                        saving = false
+                        if (result == null) editing = null else saveError = when (result) {
+                            is Msg.Res -> context.getString(result.resId)
+                            is Msg.Text -> result.message
+                        }
+                    }
+                    if (target.id.isEmpty()) vm.add(e, done) else vm.update(target, e.copy(id = target.id), done)
+                }
             }
         )
     }
     deleting?.let { e ->
         ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_question),
-            onConfirm = { vm.delete(e) }, onDismiss = { deleting = null })
+            onConfirm = { vm.delete(e) }, onDismiss = { deleting = null }, enabled = canEdit)
     }
 }
 
 @Composable
-private fun ExpenseFormDialog(
+internal fun ExpenseFormDialog(
     initial: Expense,
     funds: List<Fund>,
     isNew: Boolean,
+    saving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: (Expense) -> Unit
 ) {
@@ -239,28 +266,32 @@ private fun ExpenseFormDialog(
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text(stringResource(if (isNew) R.string.add_expense else R.string.edit_expense)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LabeledField(stringResource(R.string.expense_title), title, { title = it }, error = error)
-                LabeledField(stringResource(R.string.category), category, { category = it })
+                LabeledField(stringResource(R.string.expense_title), title, { title = it }, error = error, enabled = !saving)
+                LabeledField(stringResource(R.string.category), category, { category = it }, enabled = !saving)
                 DropdownField(
                     label = stringResource(R.string.account),
-                    options = funds.map { it.id to "${it.code} — ${it.name}" },
+                    options = funds.filter { it.active || it.id == initial.accountId }.map { it.id to "${it.code} — ${it.name}" },
                     selected = accountId,
-                    onSelect = { accountId = it }
+                    onSelect = { accountId = it }, enabled = !saving
                 )
                 LabeledField(stringResource(R.string.amount), amount, { amount = it },
-                    error = error, keyboardType = KeyboardType.Decimal)
-                DatePickerField(stringResource(R.string.date), date, { date = it })
-                LabeledField(stringResource(R.string.paid_to), paidTo, { paidTo = it })
-                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it })
-                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false)
+                    error = error, keyboardType = KeyboardType.Decimal, enabled = !saving)
+                DatePickerField(stringResource(R.string.date), date, { date = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.paid_to), paidTo, { paidTo = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.receipt_no), receipt, { receipt = it }, enabled = !saving)
+                LabeledField(stringResource(R.string.note), note, { note = it }, singleLine = false, enabled = !saving)
+                saveError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.sync_check_record), style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !saving && (isNew || !com.saif.mosque.ui.components.LocalOfflineMode.current), onClick = {
                 if (Validators.required(title) != null) { error = "required"; return@TextButton }
                 if (accountId.isBlank()) { error = "required"; return@TextButton }
                 if (Validators.amount(amount) != null) { error = "amount"; return@TextButton }
@@ -269,8 +300,8 @@ private fun ExpenseFormDialog(
                     amount = amount.toDouble(), date = date, paidTo = paidTo.trim(),
                     receiptNo = receipt.trim(), note = note.trim()
                 ))
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

@@ -54,6 +54,12 @@ function argValue(flag) {
   return i >= 0 ? process.argv[i + 1] : null;
 }
 
+if (!process.argv.includes('--unsafe-demo-only')) {
+  console.error('This script creates a PUBLICLY KNOWN superadmin password. Use ONLY in an isolated demo Firebase project.');
+  console.error('Pass --unsafe-demo-only to acknowledge the risk. Never run this against production.');
+  process.exit(1);
+}
+
 const saPath = argValue('--service-account') || process.env.GOOGLE_APPLICATION_CREDENTIALS;
 if (!saPath) {
   console.error('ERROR: pass --service-account <path> or set GOOGLE_APPLICATION_CREDENTIALS');

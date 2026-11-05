@@ -1,8 +1,8 @@
 package com.saif.mosque.data.repository
 
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.QuerySnapshot
 import com.saif.mosque.util.snapshotsFlow
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.model.AppUser
@@ -12,24 +12,40 @@ import com.saif.mosque.data.model.Expense
 import com.saif.mosque.data.model.Fund
 import com.saif.mosque.data.model.Mosque
 import com.saif.mosque.data.model.Transfer
-import com.saif.mosque.util.Format
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.tasks.await
 
-/**
- * All mosque-tenant data lives under /mosques/{mosqueId}/{collection}.
- * Balance-affecting writes (contribution/expense/transfer + their edits/deletes)
- * run inside Firestore transactions so fund balances and the mosque's cached
- * stats (totalBalance / donorCount / fundCount / memberCount) stay consistent.
- *
- * Business rules (spec section 5):
- *  - contribution: fund.balance += amount, mosque.totalBalance += amount
- *  - expense:      fund.balance -= amount, mosque.totalBalance -= amount
- *  - transfer:     from.balance -= amount, to.balance += amount (must differ,
- *                  from.balance must cover amount)
- *  - donor.totalDonated maintained with contributions
- */
+// Legacy entries lack this field. A malformed marker must not silently make a
+// potentially voided financial record count as confirmed income or expenditure.
+internal fun visibleLedgerMarker(present: Boolean, value: Any?): Boolean = !present || value == false
+
+private fun <T : Any> QuerySnapshot.visibleLedgerRecords(type: Class<T>): List<T> =
+    documents.asSequence().filter { visibleLedgerMarker(it.contains("voided"), it.get("voided")) }
+        .mapNotNull { it.toObject(type) }.toList()
+
+/** Expand only when a limited window contains too many tombstones. Legacy
+ * documents lack the marker, so a server-side `voided == false` filter is unsafe.
+ * Each replacement listener is removed by snapshotsFlow on cancellation. */
+private fun <T : Any> Query.recentVisible(type: Class<T>): Flow<List<T>> = flow {
+    var window = 10L
+    while (true) {
+        var expand = false
+        limit(window).snapshotsFlow().takeWhile { snapshot ->
+            val visible = snapshot.visibleLedgerRecords(type)
+            expand = visible.size < 10 && snapshot.size().toLong() >= window && window < Int.MAX_VALUE.toLong()
+            if (!expand) emit(visible.take(10))
+            !expand
+        }.collect { }
+        if (!expand) return@flow
+        window = (window * 2).coerceAtMost(Int.MAX_VALUE.toLong())
+    }
+}
+
+/** Tenant streams and calls to the trusted mutation backend. */
 class LedgerRepository(
     private val db: FirebaseFirestore,
     private val session: SessionManager
@@ -50,209 +66,138 @@ class LedgerRepository(
 
     fun observeContributions(mosqueId: String): Flow<List<Contribution>> =
         coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.toObjects(Contribution::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Contribution::class.java) }
 
     fun observeExpenses(mosqueId: String): Flow<List<Expense>> =
         coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.toObjects(Expense::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Expense::class.java) }
 
     fun observeTransfers(mosqueId: String): Flow<List<Transfer>> =
         coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING)
-            .snapshotsFlow().map { it.toObjects(Transfer::class.java) }
+            .snapshotsFlow().map { it.visibleLedgerRecords(Transfer::class.java) }
 
     fun observeMembers(mosqueId: String): Flow<List<AppUser>> =
         db.collection("users").whereEqualTo("mosqueId", mosqueId).snapshotsFlow()
             .map { it.toObjects(AppUser::class.java) }
 
+    fun observeRecentContributions(mosqueId: String): Flow<List<Contribution>> =
+        coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING).recentVisible(Contribution::class.java)
+    fun observeRecentExpenses(mosqueId: String): Flow<List<Expense>> =
+        coll(mosqueId, "expenses").orderBy("date", Query.Direction.DESCENDING).recentVisible(Expense::class.java)
+    fun observeRecentTransfers(mosqueId: String): Flow<List<Transfer>> =
+        coll(mosqueId, "transfers").orderBy("date", Query.Direction.DESCENDING).recentVisible(Transfer::class.java)
+    fun observeMonthContributions(mosqueId: String, start: String, end: String): Flow<List<Contribution>> =
+        coll(mosqueId, "contributions").whereGreaterThanOrEqualTo("date", start).whereLessThanOrEqualTo("date", end)
+            .snapshotsFlow().map { it.visibleLedgerRecords(Contribution::class.java) }
+    fun observeMonthExpenses(mosqueId: String, start: String, end: String): Flow<List<Expense>> =
+        coll(mosqueId, "expenses").whereGreaterThanOrEqualTo("date", start).whereLessThanOrEqualTo("date", end)
+            .snapshotsFlow().map { it.visibleLedgerRecords(Expense::class.java) }
+
     fun observeMosque(mosqueId: String): Flow<Mosque?> =
         mosqueRef(mosqueId).snapshotsFlow().map { it.toObject(Mosque::class.java) }
 
-    // ---------- funds ----------
+    // Ledger mutations still require the trusted backend; direct ledger writes are denied.
+    private suspend fun mutate(kind: String, action: String, mosqueId: String,
+                               id: String? = null, value: Any? = null, expected: Any? = null) {
+        val data = mutableMapOf<String, Any>("operation" to if (kind in setOf("funds", "donors", "members")) "directory" else "ledger",
+            "kind" to kind, "action" to action, "mosqueId" to mosqueId)
+        if (id != null) data["id"] = id
+        if (value != null) data["value"] = callableMap(value)
+        if (expected != null) data["expected"] = callableMap(expected)
+        com.google.firebase.functions.FirebaseFunctions.getInstance().getHttpsCallable("mutate").call(data).await()
+    }
 
-    suspend fun addFund(mosqueId: String, fund: Fund) {
-        val ref = coll(mosqueId, "funds").document()
+    // Direct directory writes are paired with their counters in one atomic batch.
+    // The matching Firestore rules independently validate both sides of the batch.
+    // Accounting entries still use the trusted backend; never write balances here.
+    private suspend fun addDirectory(mosqueId: String, kind: String, fields: Map<String, Any>) {
+        val parent = mosqueRef(mosqueId)
+        val ref = parent.collection(kind).document()
+        val counter = if (kind == "funds") "fundCount" else "donorCount"
+        db.batch().set(ref, fields).update(parent, mapOf(
+            counter to com.google.firebase.firestore.FieldValue.increment(1),
+            "directoryOpId" to ref.id, "directoryOpKind" to kind
+        )).commit().await()
+    }
+
+    suspend fun addFund(mosqueId: String, fund: Fund) = addDirectory(mosqueId, "funds", mapOf(
+        "mosqueId" to mosqueId, "name" to fund.name.trim(), "code" to fund.code.trim(),
+        "nameEn" to fund.nameEn.trim(), "description" to fund.description.trim(),
+        "active" to fund.active, "balance" to 0, "balancePoisha" to 0L
+    ))
+    suspend fun updateFund(mosqueId: String, old: Fund, fund: Fund) {
+        val ref = coll(mosqueId, "funds").document(old.id)
         db.runTransaction { tx ->
-            tx.set(ref, fund.copy(id = "", mosqueId = mosqueId))
-            tx.update(mosqueRef(mosqueId), "fundCount", FieldValue.increment(1))
-            null
+            val current = tx.get(ref).toObject(Fund::class.java) ?: throw StaleRecordException()
+            if (!com.saif.mosque.util.MetadataVersion.sameFund(current, old)) throw StaleRecordException()
+            tx.update(ref, mapOf(
+                "name" to fund.name.trim(), "code" to fund.code.trim(), "nameEn" to fund.nameEn.trim(),
+                "description" to fund.description.trim(), "active" to fund.active
+            ))
         }.await()
     }
-
-    suspend fun updateFund(mosqueId: String, fund: Fund) {
-        coll(mosqueId, "funds").document(fund.id).set(fund.copy(id = "", mosqueId = mosqueId)).await()
-    }
-
     suspend fun deleteFund(mosqueId: String, fundId: String) {
+        coll(mosqueId, "funds").document(fundId).update("active", false).await()
+    }
+    suspend fun addDonor(mosqueId: String, donor: Donor) = addDirectory(mosqueId, "donors", mapOf(
+        "mosqueId" to mosqueId, "name" to donor.name.trim(), "phone" to donor.phone.trim(),
+        "address" to donor.address.trim(), "active" to donor.active, "totalDonated" to 0, "totalDonatedPoisha" to 0L,
+        "createdAt" to System.currentTimeMillis()
+    ))
+    suspend fun updateDonor(mosqueId: String, old: Donor, donor: Donor) {
+        val ref = coll(mosqueId, "donors").document(old.id)
         db.runTransaction { tx ->
-            tx.delete(coll(mosqueId, "funds").document(fundId))
-            tx.update(mosqueRef(mosqueId), "fundCount", FieldValue.increment(-1))
-            null
+            val current = tx.get(ref).toObject(Donor::class.java) ?: throw StaleRecordException()
+            if (!com.saif.mosque.util.MetadataVersion.sameDonor(current, old)) throw StaleRecordException()
+            tx.update(ref, mapOf(
+                "name" to donor.name.trim(), "phone" to donor.phone.trim(), "address" to donor.address.trim(),
+                "active" to donor.active
+            ))
         }.await()
     }
-
-    // ---------- donors ----------
-
-    suspend fun addDonor(mosqueId: String, donor: Donor) {
-        val ref = coll(mosqueId, "donors").document()
-        db.runTransaction { tx ->
-            tx.set(ref, donor.copy(id = "", mosqueId = mosqueId, createdAt = System.currentTimeMillis()))
-            tx.update(mosqueRef(mosqueId), "donorCount", FieldValue.increment(1))
-            null
-        }.await()
-    }
-
-    suspend fun updateDonor(mosqueId: String, donor: Donor) {
-        coll(mosqueId, "donors").document(donor.id)
-            .set(donor.copy(id = "", mosqueId = mosqueId)).await()
-    }
-
     suspend fun deleteDonor(mosqueId: String, donorId: String) {
+        coll(mosqueId, "donors").document(donorId).update("active", false).await()
+    }
+
+    suspend fun addContribution(mosqueId: String, c: Contribution, userId: String) =
+        mutate("contributions", "add", mosqueId, value = c)
+    suspend fun updateContribution(mosqueId: String, old: Contribution, new: Contribution, userId: String) =
+        mutate("contributions", "update", mosqueId, old.id, new, old)
+    suspend fun deleteContribution(mosqueId: String, c: Contribution) =
+        mutate("contributions", "delete", mosqueId, c.id, expected = c)
+    suspend fun addExpense(mosqueId: String, e: Expense, userId: String) =
+        mutate("expenses", "add", mosqueId, value = e)
+    suspend fun updateExpense(mosqueId: String, old: Expense, new: Expense, userId: String) =
+        mutate("expenses", "update", mosqueId, old.id, new, old)
+    suspend fun deleteExpense(mosqueId: String, e: Expense) =
+        mutate("expenses", "delete", mosqueId, e.id, expected = e)
+    suspend fun addTransfer(mosqueId: String, t: Transfer, userId: String) =
+        mutate("transfers", "add", mosqueId, value = t)
+    suspend fun deleteTransfer(mosqueId: String, t: Transfer) =
+        mutate("transfers", "delete", mosqueId, t.id, expected = t)
+
+    suspend fun updateMember(mosqueId: String, old: AppUser, member: AppUser, editor: AppUser) {
+        if (old.id == editor.id && !member.active) throw SelfActionException()
+        val ref = db.collection("users").document(old.id)
         db.runTransaction { tx ->
-            tx.delete(coll(mosqueId, "donors").document(donorId))
-            tx.update(mosqueRef(mosqueId), "donorCount", FieldValue.increment(-1))
-            null
+            val current = tx.get(ref).toObject(AppUser::class.java) ?: throw StaleRecordException()
+            if (current.mosqueId != mosqueId || !com.saif.mosque.util.MetadataVersion.sameMember(current, old))
+                throw StaleRecordException()
+            tx.update(ref, mapOf(
+                "name" to member.name.trim(), "phone" to member.phone.trim(),
+                "designation" to member.designation.trim(), "role" to member.role.name,
+                "active" to member.active
+            ))
         }.await()
     }
-
-    // ---------- contributions ----------
-
-    suspend fun addContribution(mosqueId: String, c: Contribution, userId: String) {
-        val fundRef = coll(mosqueId, "funds").document(c.accountId)
-        val mosque = mosqueRef(mosqueId)
-        val donorRef = if (c.donorId.isNotBlank()) coll(mosqueId, "donors").document(c.donorId) else null
-        db.runTransaction { tx ->
-            val fund = tx.get(fundRef).toObject(Fund::class.java)
-                ?: throw IllegalStateException("fund not found")
-            tx.update(fundRef, "balance", fund.balance + c.amount)
-            tx.update(mosque, "totalBalance", FieldValue.increment(c.amount))
-            donorRef?.let { tx.update(it, "totalDonated", FieldValue.increment(c.amount)) }
-            tx.set(coll(mosqueId, "contributions").document(),
-                c.copy(id = "", mosqueId = mosqueId, createdBy = userId, createdAt = System.currentTimeMillis()))
-            null
-        }.await()
-    }
-
-    /** Edit = adjust balances by the delta, then overwrite the document. */
-    suspend fun updateContribution(mosqueId: String, old: Contribution, new: Contribution, userId: String) {
-        val mosque = mosqueRef(mosqueId)
-        db.runTransaction { tx ->
-            val oldFund = tx.get(coll(mosqueId, "funds").document(old.accountId)).toObject(Fund::class.java)!!
-            val newFund = tx.get(coll(mosqueId, "funds").document(new.accountId)).toObject(Fund::class.java)!!
-            tx.update(coll(mosqueId, "funds").document(old.accountId), "balance", oldFund.balance - old.amount)
-            tx.update(coll(mosqueId, "funds").document(new.accountId), "balance", newFund.balance + new.amount)
-            tx.update(mosque, "totalBalance", FieldValue.increment(new.amount - old.amount))
-            tx.set(coll(mosqueId, "contributions").document(old.id),
-                new.copy(id = "", mosqueId = mosqueId, createdBy = userId, createdAt = old.createdAt))
-            null
-        }.await()
-    }
-
-    suspend fun deleteContribution(mosqueId: String, c: Contribution) {
-        val fundRef = coll(mosqueId, "funds").document(c.accountId)
-        val mosque = mosqueRef(mosqueId)
-        db.runTransaction { tx ->
-            val fund = tx.get(fundRef).toObject(Fund::class.java)!!
-            tx.update(fundRef, "balance", fund.balance - c.amount)
-            tx.update(mosque, "totalBalance", FieldValue.increment(-c.amount))
-            tx.delete(coll(mosqueId, "contributions").document(c.id))
-            null
-        }.await()
-    }
-
-    // ---------- expenses ----------
-
-    suspend fun addExpense(mosqueId: String, e: Expense, userId: String) {
-        val fundRef = coll(mosqueId, "funds").document(e.accountId)
-        val mosque = mosqueRef(mosqueId)
-        db.runTransaction { tx ->
-            val fund = tx.get(fundRef).toObject(Fund::class.java)
-                ?: throw IllegalStateException("fund not found")
-            if (fund.balance < e.amount) throw InsufficientBalanceException()
-            tx.update(fundRef, "balance", fund.balance - e.amount)
-            tx.update(mosque, "totalBalance", FieldValue.increment(-e.amount))
-            tx.set(coll(mosqueId, "expenses").document(),
-                e.copy(id = "", mosqueId = mosqueId, createdAt = System.currentTimeMillis()))
-            null
-        }.await()
-    }
-
-    suspend fun updateExpense(mosqueId: String, old: Expense, new: Expense, userId: String) {
-        val mosque = mosqueRef(mosqueId)
-        db.runTransaction { tx ->
-            val oldFund = tx.get(coll(mosqueId, "funds").document(old.accountId)).toObject(Fund::class.java)!!
-            val newFund = tx.get(coll(mosqueId, "funds").document(new.accountId)).toObject(Fund::class.java)!!
-            tx.update(coll(mosqueId, "funds").document(old.accountId), "balance", oldFund.balance + old.amount)
-            tx.update(coll(mosqueId, "funds").document(new.accountId), "balance", newFund.balance - new.amount)
-            tx.update(mosque, "totalBalance", FieldValue.increment(old.amount - new.amount))
-            tx.set(coll(mosqueId, "expenses").document(old.id),
-                new.copy(id = "", mosqueId = mosqueId, createdAt = old.createdAt))
-            null
-        }.await()
-    }
-
-    suspend fun deleteExpense(mosqueId: String, e: Expense) {
-        val fundRef = coll(mosqueId, "funds").document(e.accountId)
-        val mosque = mosqueRef(mosqueId)
-        db.runTransaction { tx ->
-            val fund = tx.get(fundRef).toObject(Fund::class.java)!!
-            tx.update(fundRef, "balance", fund.balance + e.amount)
-            tx.update(mosque, "totalBalance", FieldValue.increment(e.amount))
-            tx.delete(coll(mosqueId, "expenses").document(e.id))
-            null
-        }.await()
-    }
-
-    // ---------- transfers ----------
-
-    suspend fun addTransfer(mosqueId: String, t: Transfer, userId: String) {
-        if (t.fromAccountId == t.toAccountId) throw SameAccountException()
-        val fromRef = coll(mosqueId, "funds").document(t.fromAccountId)
-        val toRef = coll(mosqueId, "funds").document(t.toAccountId)
-        db.runTransaction { tx ->
-            val from = tx.get(fromRef).toObject(Fund::class.java)
-                ?: throw IllegalStateException("from fund not found")
-            val to = tx.get(toRef).toObject(Fund::class.java)
-                ?: throw IllegalStateException("to fund not found")
-            if (from.balance < t.amount) throw InsufficientBalanceException()
-            tx.update(fromRef, "balance", from.balance - t.amount)
-            tx.update(toRef, "balance", to.balance + t.amount)
-            // mosque totalBalance unchanged by a transfer
-            tx.set(coll(mosqueId, "transfers").document(),
-                t.copy(id = "", mosqueId = mosqueId, createdBy = userId, createdAt = System.currentTimeMillis()))
-            null
-        }.await()
-    }
-
-    suspend fun deleteTransfer(mosqueId: String, t: Transfer) {
-        val fromRef = coll(mosqueId, "funds").document(t.fromAccountId)
-        val toRef = coll(mosqueId, "funds").document(t.toAccountId)
-        db.runTransaction { tx ->
-            val from = tx.get(fromRef).toObject(Fund::class.java)!!
-            val to = tx.get(toRef).toObject(Fund::class.java)!!
-            tx.update(fromRef, "balance", from.balance + t.amount)
-            tx.update(toRef, "balance", to.balance - t.amount)
-            tx.delete(coll(mosqueId, "transfers").document(t.id))
-            null
-        }.await()
-    }
-
-    // ---------- members (users collection) ----------
-
-    suspend fun updateMember(mosqueId: String, member: AppUser, editor: AppUser) {
-        // spec 2.3: cannot deactivate yourself
-        if (member.id == editor.id && !member.active) throw SelfActionException()
-        db.collection("users").document(member.id)
-            .set(member.copy(id = ""), com.google.firebase.firestore.SetOptions.merge()).await()
-    }
-
     suspend fun deleteMember(mosqueId: String, memberId: String, editor: AppUser) {
-        // spec 2.3: cannot delete yourself
         if (memberId == editor.id) throw SelfActionException()
-        db.runTransaction { tx ->
-            tx.delete(db.collection("users").document(memberId))
-            tx.update(mosqueRef(mosqueId), "memberCount", FieldValue.increment(-1))
-            null
-        }.await()
+        val member = db.collection("users").document(memberId)
+        // The rules require a corresponding deletion and decrement in the same batch.
+        db.batch().delete(member).update(mosqueRef(mosqueId), mapOf(
+            "memberCount" to com.google.firebase.firestore.FieldValue.increment(-1),
+            "memberOpId" to memberId
+        )).commit().await()
     }
 
     // ---------- month queries (reports) ----------
@@ -261,15 +206,22 @@ class LedgerRepository(
         coll(mosqueId, "contributions")
             .whereGreaterThanOrEqualTo("date", startIso)
             .whereLessThanOrEqualTo("date", endIso)
-            .get().await().toObjects(Contribution::class.java)
+            .get().await().visibleLedgerRecords(Contribution::class.java)
 
     suspend fun expensesInRange(mosqueId: String, startIso: String, endIso: String): List<Expense> =
         coll(mosqueId, "expenses")
             .whereGreaterThanOrEqualTo("date", startIso)
             .whereLessThanOrEqualTo("date", endIso)
-            .get().await().toObjects(Expense::class.java)
+            .get().await().visibleLedgerRecords(Expense::class.java)
 }
 
 class InsufficientBalanceException : Exception("insufficient balance")
 class SameAccountException : Exception("same account")
 class SelfActionException : Exception("self action not allowed")
+class StaleRecordException : Exception("Record changed elsewhere. Refresh and try again.")
+
+/** Convert a Firestore model to the plain JSON-compatible data accepted by callable functions. */
+internal fun callableMap(value: Any): Map<*, *> {
+    val gson = com.google.gson.Gson()
+    return gson.fromJson(gson.toJson(value), Map::class.java)
+}

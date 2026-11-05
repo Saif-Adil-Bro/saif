@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,6 +72,9 @@ import kotlinx.coroutines.launch
 
 class DonorsViewModel(
     private val repo: LedgerRepository,
+    private val outbox: com.saif.mosque.data.outbox.DirectoryOutbox,
+    private val auth: com.google.firebase.auth.FirebaseAuth,
+    private val context: android.content.Context,
     private val mosqueId: String,
     private val user: AppUser
 ) : ViewModel() {
@@ -84,22 +89,63 @@ class DonorsViewModel(
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
 
-    fun add(d: Donor) = mutate { repo.addDonor(mosqueId, d) }
-    fun update(d: Donor) = mutate { repo.updateDonor(mosqueId, d) }
-    fun delete(d: Donor) = mutate { repo.deleteDonor(mosqueId, d.id) }
+    var adding by mutableStateOf(false)
+        private set
+    var addError by mutableStateOf(false)
+        private set
+    val pending = outbox.observe(user.id, mosqueId, "donors")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private fun mutate(block: suspend () -> Unit) {
+    fun clearAddError() { addError = false }
+    private fun queue(onSaved: () -> Unit, form: Boolean = true,
+                      build: suspend () -> com.saif.mosque.data.outbox.DirectoryDraft) {
+        if (adding) return
+        adding = true
+        addError = false
         viewModelScope.launch {
-            try { block(); _messages.emit(Msg.Res(R.string.saved_ok)) }
-            catch (e: Exception) { _messages.emit(Msg.Text(e.message ?: "error")) }
+            val stored = try {
+                check(auth.currentUser?.uid == user.id)
+                val draft = build()
+                // A scheduling failure cannot undo the durable draft; recovery will retry.
+                runCatching { com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
+                    com.saif.mosque.data.outbox.DirectorySync.scheduleRecovery(context) }
+                true
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                addError = true
+                false
+            } finally { adding = false }
+            if (stored) { onSaved(); _messages.emit(Msg.Res(R.string.local_pending_saved)) }
+            else if (!form) _messages.emit(Msg.Res(R.string.local_save_failed))
         }
     }
+    fun add(d: Donor, onSaved: () -> Unit) = queue(onSaved) { outbox.addDonor(user.id, mosqueId, d) }
+    fun update(old: Donor, d: Donor, onSaved: () -> Unit) =
+        queue(onSaved) { outbox.editDonor(user.id, mosqueId, old, d) }
+    fun delete(d: Donor) =
+        queue({}, form = false) { outbox.editDonor(user.id, mosqueId, d, d.copy(active = false), archive = true) }
+    fun retry(draft: com.saif.mosque.data.outbox.DirectoryDraft) = viewModelScope.launch {
+        if (auth.currentUser?.uid == user.id && outbox.retry(draft.id, user.id, mosqueId)) {
+            com.saif.mosque.data.outbox.DirectorySync.schedule(context, draft.id)
+        }
+    }
+    fun discard(draft: com.saif.mosque.data.outbox.DirectoryDraft) = viewModelScope.launch {
+        if (auth.currentUser?.uid == user.id) {
+            com.saif.mosque.data.outbox.DirectorySync.cancel(context, draft.id)
+            outbox.discardBlocked(draft.id, user.id, mosqueId)
+        }
+    }
+
 }
 
 @Composable
 fun DonorsScreen(container: AppContainer, user: AppUser) {
     val mosqueId = user.mosqueId ?: return
-    val vm: DonorsViewModel = viewModel { DonorsViewModel(container.ledgerRepository, mosqueId, user) }
+    val vm: DonorsViewModel = viewModel { DonorsViewModel(container.ledgerRepository, container.outbox, container.auth, container.context, mosqueId, user) }
+    val offline = com.saif.mosque.ui.components.LocalOfflineMode.current
+    val canAdd = vm.canEdit
+    val canEdit = vm.canEdit
+    val pending by vm.pending.collectAsStateWithLifecycle()
+    val canDelete = vm.canDelete
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -118,20 +164,25 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (vm.canEdit) FloatingActionButton(onClick = { editing = Donor() }) {
+            if (canAdd) FloatingActionButton(onClick = { vm.clearAddError(); editing = Donor() }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_donor))
             }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
-        StateBox(state, onRetry = {}) { donors ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+            com.saif.mosque.ui.components.PendingDirectory(pending, !offline, onRetry = { vm.retry(it) }, onDiscard = { vm.discard(it) })
+            androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+        StateBox(state) { donors ->
             val filtered = donors.filter {
                 query.isBlank() || it.name.contains(query, true) || it.phone.contains(query, true)
             }
             LazyColumn(
-                Modifier.fillMaxSize().padding(inner).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 item {
                     OutlinedTextField(
@@ -142,32 +193,18 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
                 }
                 if (filtered.isEmpty()) item { EmptyBox() }
                 items(filtered, key = { it.id }) { d ->
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface)) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(d.name, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    listOfNotNull(d.phone, d.address).joinToString(" • ") +
-                                        if (!d.active) " • ${stringResource(R.string.inactive)}" else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${stringResource(R.string.total_donated)}: ${Format.money(d.totalDonated)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary)
-                            }
-                            if (vm.canEdit) {
-                                IconButton(onClick = { editing = d }) { Icon(Icons.Filled.Edit, contentDescription = null) }
-                            }
-                            if (vm.canDelete) {
-                                IconButton(onClick = { deleting = d }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
+                    com.saif.mosque.ui.components.RecordCard(
+                        title = d.name,
+                        supporting = listOf(d.phone, d.address).filter { it.isNotBlank() }.joinToString(" · "),
+                        amount = Format.money(d.totalDonated), amountLabel = stringResource(R.string.total_donated),
+                        amountColor = MaterialTheme.colorScheme.primary,
+                        status = if (!d.active) stringResource(R.string.inactive) else null,
+                        onEdit = if (canEdit) ({ vm.clearAddError(); editing = d }) else null,
+                        onDelete = if (canDelete && d.active) ({ deleting = d }) else null,
+                        archive = true, deleteLabel = stringResource(R.string.archive))
                 }
+            }
+        }
             }
         }
     }
@@ -176,16 +213,19 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
         DonorFormDialog(
             initial = target,
             isNew = target.id.isEmpty(),
-            onDismiss = { editing = null },
+            saving = vm.adding,
+            saveError = vm.addError,
+            onDismiss = { if (!vm.adding) editing = null },
             onSave = { d ->
-                if (target.id.isEmpty()) vm.add(d) else vm.update(d.copy(id = target.id))
-                editing = null
+                if (target.id.isEmpty()) vm.add(d) { editing = null }
+                else vm.update(target, d.copy(id = target.id)) { editing = null }
             }
         )
     }
     deleting?.let { d ->
-        ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_question),
-            onConfirm = { vm.delete(d) }, onDismiss = { deleting = null })
+        ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.archive_donor_q),
+            onConfirm = { vm.delete(d) }, onDismiss = { deleting = null },
+            confirmLabel = stringResource(R.string.archive), enabled = canDelete)
     }
 }
 
@@ -193,6 +233,8 @@ fun DonorsScreen(container: AppContainer, user: AppUser) {
 private fun DonorFormDialog(
     initial: Donor,
     isNew: Boolean,
+    saving: Boolean,
+    saveError: Boolean,
     onDismiss: () -> Unit,
     onSave: (Donor) -> Unit
 ) {
@@ -211,20 +253,23 @@ private fun DonorFormDialog(
                 LabeledField(stringResource(R.string.phone), phone, { phone = it },
                     error = Validators.bdPhone(phone)?.let { "phone" }, keyboardType = KeyboardType.Phone)
                 LabeledField(stringResource(R.string.address), address, { address = it }, singleLine = false)
+                if (saveError) Text(stringResource(R.string.local_save_failed), color = MaterialTheme.colorScheme.error)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.active), Modifier.weight(1f))
-                    Switch(checked = active, onCheckedChange = { active = it })
+                    val activeLabel = stringResource(R.string.active)
+                    Switch(checked = active, onCheckedChange = { active = it },
+                        modifier = Modifier.semantics { contentDescription = activeLabel })
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !saving, onClick = {
                 if (Validators.required(name) != null) { error = "required"; return@TextButton }
                 if (Validators.bdPhone(phone) != null) return@TextButton
                 onSave(initial.copy(name = name.trim(), phone = phone.trim(),
                     address = address.trim(), active = active))
-            }) { Text(stringResource(R.string.save)) }
+            }) { Text(stringResource(if (saving) R.string.saving else R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }
