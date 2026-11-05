@@ -48,8 +48,14 @@ fun PendingLedger(drafts: List<PrototypeQueuedLedger>, online: Boolean,
                         val d = queued.draft
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(when (d.kind) { "contributions" -> d.donorName; "expenses" -> d.title; else -> stringResource(R.string.transfers) },
-                                    style = MaterialTheme.typography.titleSmall)
+                                val kindLabel = when (d.kind) {
+                                    "contributions" -> R.string.contributions
+                                    "expenses" -> R.string.expenses
+                                    else -> R.string.transfers
+                                }
+                                Text(stringResource(kindLabel), style = MaterialTheme.typography.labelMedium)
+                                val detail = when (d.kind) { "contributions" -> d.donorName; "expenses" -> d.title; else -> "" }
+                                if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.titleSmall)
                                 Text("${Format.money(LedgerMath.taka(d.amountPoisha))} · ${Format.date(d.date)}", style = MaterialTheme.typography.bodySmall)
                                 if (d.note.isNotBlank()) Text(d.note, style = MaterialTheme.typography.bodySmall)
                                 Text(stringResource(if (queued.state == "BLOCKED") R.string.sync_unconfirmed else R.string.sync_waiting),
