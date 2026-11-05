@@ -101,3 +101,22 @@ test('malformed historical self-transfer cannot inflate a fund',async()=>{
  await assertFails(mutate(db,'transfers','t','self','delete',{voided:true},[['/funds/a',field(10000,'self')]]));
  assert.equal((await getDoc(doc(db,'mosques/m/funds/a'))).data().balancePoisha,8000);
 });
+test('simultaneous corrections using the same snapshot cannot both commit',async()=>{
+ const db=dbFor('admin'), target=doc(db,'mosques/m/expenses/x');
+ const before=(await getDoc(target)).data();
+ function attempt(id,title){
+  const after={...before,title,ledgerMutationId:id}; const b=writeBatch(db);
+  b.set(doc(db,`mosques/m/ledgerMutations/${id}`),{uid:'admin',kind:'expenses',targetId:'x',action:'update',oldAmountPoisha:1000,newAmountPoisha:1000,before,after});
+  b.update(target,after); b.update(doc(db,'mosques/m/funds/a'),field(8000,id)); return b.commit();
+ }
+ const results=await Promise.allSettled([attempt('one','One'),attempt('two','Two')]);
+ assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+ assert.equal(results.filter(r=>r.status==='rejected').length,1);
+});
+test('a linked receipt does not permit wrong but nonnegative aggregate deltas',async()=>{
+ const db=dbFor('admin');
+ await assertFails(mutate(db,'contributions','c','wrong','update',{amount:60,amountPoisha:6000},[
+  ['/funds/a',field(9500,'wrong')],['/donors/d',donor(6000,'wrong')],['',total(11000,'wrong')]
+ ]));
+ assert.equal((await getDoc(doc(db,'mosques/m/funds/a'))).data().balancePoisha,8000);
+});
