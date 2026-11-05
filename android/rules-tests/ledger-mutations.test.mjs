@@ -92,7 +92,8 @@ test('allows correcting an archived old account but refuses assigning a new arch
  await assertSucceeds(mutate(db,'contributions','c','archive-old','delete',{voided:true},[
    ['/funds/a',field(3000,'archive-old')],['/donors/d',donor(0,'archive-old')],['',total(5000,'archive-old')]
  ]));
- await assertFails(mutate(db,'expenses','x','archive-new','update',{accountId:'a'},[['/funds/a',field(3000,'archive-new')]]));
+ await assertSucceeds(mutate(db,'expenses','x','move','update',{accountId:'b'},[['/funds/a',field(4000,'move')],['/funds/b',field(1000,'move')]]));
+ await assertFails(mutate(db,'expenses','x','archive-new','update',{accountId:'a'},[['/funds/a',field(3000,'archive-new')],['/funds/b',field(2000,'archive-new')]]));
 });
 test('malformed historical self-transfer cannot inflate a fund',async()=>{
  const db=dbFor('admin');
