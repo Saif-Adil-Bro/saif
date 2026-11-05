@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.ChevronRight
@@ -22,21 +24,26 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.saif.mosque.R
 import com.saif.mosque.data.model.AppUser
@@ -45,6 +52,7 @@ import com.saif.mosque.ui.components.ConfirmDialog
 import com.saif.mosque.ui.components.SectionTitle
 import com.saif.mosque.ui.navigation.Screen
 import com.saif.mosque.ui.viewmodel.AuthViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthViewModel, user: AppUser) {
@@ -96,10 +104,10 @@ fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthView
 @Composable
 private fun AuditTrailDialog(container: AppContainer, mosqueId: String, onDismiss: () -> Unit) {
     val mutationsFlow = remember(mosqueId) { container.ledgerRepository.observeLedgerMutations(mosqueId) }
-    val mutations by androidx.lifecycle.compose.collectAsStateWithLifecycle(mutationsFlow, initialValue = emptyList())
+    val mutations by mutationsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     var verification by remember { mutableStateOf<com.saif.mosque.data.model.ReceiptChainVerification?>(null) }
     var verifying by remember { mutableStateOf(false) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
     fun runVerify() {
         if (verifying) return
@@ -124,20 +132,16 @@ private fun AuditTrailDialog(container: AppContainer, mosqueId: String, onDismis
         }
     }
 
-    androidx.compose.runtime.LaunchedEffect(mosqueId) {
+    LaunchedEffect(mosqueId) {
         runVerify()
     }
 
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.audit_trail_title)) },
         text = {
             Column(
-                Modifier.fillMaxWidth().then(
-                    with(androidx.compose.foundation.rememberScrollState()) {
-                        androidx.compose.foundation.verticalScroll(this)
-                    }
-                ),
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 verification?.let { v ->

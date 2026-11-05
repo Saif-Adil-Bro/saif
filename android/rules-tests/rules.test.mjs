@@ -310,9 +310,10 @@ test('platform admin can atomically provision a new v2 mosque and its first admi
   };
   await assertFails(setDoc(doc(platformDb, 'mosques/mosque-new-1'), mosqueDoc));
   await assertFails(setDoc(doc(platformDb, 'users/new-admin-1'), adminDoc));
-  const tenantBatch = writeBatch(dbFor('admin-a'));
-  tenantBatch.set(doc(dbFor('admin-a'), 'mosques/mosque-new-1'), mosqueDoc);
-  tenantBatch.set(doc(dbFor('admin-a'), 'users/new-admin-1'), adminDoc);
+  const adminADb = dbFor('admin-a');
+  const tenantBatch = writeBatch(adminADb);
+  tenantBatch.set(doc(adminADb, 'mosques/mosque-new-1'), mosqueDoc);
+  tenantBatch.set(doc(adminADb, 'users/new-admin-1'), adminDoc);
   await assertFails(tenantBatch.commit());
 
   const okBatch = writeBatch(platformDb);
