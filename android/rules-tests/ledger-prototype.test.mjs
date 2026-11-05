@@ -186,3 +186,14 @@ test('anonymous contributions do not require or mutate a donor', async () => {
   assert.equal((await getDoc(doc(db,'mosques/a/donors/d'))).data().totalDonatedPoisha,0);
   assert.equal((await getDoc(doc(db,'mosques/a'))).data().totalBalancePoisha,10100);
 });
+
+test('rules reject the losing concurrent spend even if clients skip transaction checks', async () => {
+  const admin=dbFor('admin'), cashier=dbFor('cashier');
+  const results=await Promise.allSettled([
+    addExpense(admin,'batch-a',expense('admin',8000)),
+    addExpense(cashier,'batch-b',expense('cashier',8000)),
+  ]);
+  assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+  assert.equal((await getDoc(doc(admin,'mosques/a/funds/general'))).data().balancePoisha,2000);
+  assert.equal((await getDoc(doc(admin,'mosques/a'))).data().totalBalancePoisha,2000);
+});
