@@ -104,14 +104,17 @@ class PrototypeInvitationService(private val db: FirebaseFirestore, private val 
         ensureUid(uid)
         if (oldProfile.metadata.hasPendingWrites()) throw InvitationPendingWrite()
         if (oldProfile.exists()) {
-            if (oldProfile.getString("inviteId") != inviteId || oldProfile.getString("mosqueId") != mosqueId || oldProfile.getString("email") != email)
-                throw InvitationConflict()
+            if (oldProfile.getString("inviteId") != inviteId || oldProfile.getString("mosqueId") != mosqueId ||
+                oldProfile.getString("email") != email || oldProfile.getBoolean("active") != true) throw InvitationConflict()
             val accepted = invitation.get(Source.SERVER).await()
             val existingClaim = claim.get(Source.SERVER).await()
+            val mosque = parent.get(Source.SERVER).await()
             ensureUid(uid)
-            if (accepted.metadata.hasPendingWrites() || existingClaim.metadata.hasPendingWrites()) throw InvitationPendingWrite()
+            if (accepted.metadata.hasPendingWrites() || existingClaim.metadata.hasPendingWrites() || mosque.metadata.hasPendingWrites())
+                throw InvitationPendingWrite()
             if (accepted.getString("status") != "accepted" || accepted.getString("acceptedBy") != uid ||
-                existingClaim.getString("uid") != uid || existingClaim.getString("inviteId") != inviteId) throw InvitationConflict()
+                existingClaim.getString("uid") != uid || existingClaim.getString("inviteId") != inviteId ||
+                !mosque.exists() || mosque.getBoolean("active") != true) throw InvitationConflict()
             return
         }
         val invite = invitation.get(Source.SERVER).await()
