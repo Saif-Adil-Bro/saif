@@ -328,4 +328,6 @@
     <string name="save_as_members">Save as Members</string>
     <string name="members_saved_ok">Members added to subscription list</string>
     <string name="duplicate_collect_warning">Some members have already paid for this month and were skipped</string>
+    <string name="payroll_title">Staff Payroll</string>
+    <string name="projects_title">Special Projects</string>
 </resources>

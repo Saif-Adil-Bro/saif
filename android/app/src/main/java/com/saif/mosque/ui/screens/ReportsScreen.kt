@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,9 +45,11 @@ import com.saif.mosque.data.model.MonthlyReport
 import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FridayAnnouncementDialog
 import com.saif.mosque.ui.components.MoneyText
 import com.saif.mosque.ui.components.SectionTitle
 import com.saif.mosque.ui.components.StatCard
+import com.saif.mosque.util.AuditReportPdfExporter
 import com.saif.mosque.util.Format
 import com.saif.mosque.util.UiState
 import kotlinx.coroutines.flow.catch
@@ -125,6 +130,12 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
     }
     val fundsState by fundsFlow.collectAsState(initial = emptyList())
 
+    val mosqueFlow = remember(mosqueId) {
+        container.ledgerRepository.observeMosque(mosqueId).catch { emit(null) }
+    }
+    val mosqueInfo by mosqueFlow.collectAsState(initial = null)
+    var showFridayAnnouncement by remember { mutableStateOf(false) }
+
     Scaffold(contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically,
@@ -136,6 +147,29 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
                     style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 IconButton(onClick = { vm.nextMonth() }) {
                     Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
+                }
+
+                FilledTonalIconButton(onClick = { showFridayAnnouncement = true }) {
+                    Icon(Icons.Filled.Campaign, contentDescription = "খুতবার আগের ঘোষণা")
+                }
+
+                IconButton(onClick = {
+                    (state as? UiState.Success)?.data?.let { r ->
+                        val fundBals = fundsState.map { it to it.balance }
+                        val mLabel = Format.monthLabel(context, ym.second, ym.first)
+                        AuditReportPdfExporter.printAuditReport(
+                            context = context,
+                            mosque = mosqueInfo,
+                            periodLabel = mLabel,
+                            totalIncome = r.income,
+                            totalExpense = r.expense,
+                            fundBalances = fundBals,
+                            contributions = r.contributions,
+                            expenses = r.expenses
+                        )
+                    }
+                }) {
+                    Icon(Icons.Filled.Print, contentDescription = "অডিট রিপোর্ট প্রিন্ট")
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -178,5 +212,21 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
                 }
             }
         }
+    }
+
+    if (showFridayAnnouncement) {
+        val rep = (state as? UiState.Success)?.data
+        val inc = rep?.income ?: 0.0
+        val exp = rep?.expense ?: 0.0
+        val fundBals = fundsState.map { it to it.balance }
+        val totBal = fundBals.sumOf { it.second }
+        FridayAnnouncementDialog(
+            mosqueName = mosqueInfo?.name ?: "",
+            lastWeekIncome = inc / 4.0,
+            lastWeekExpense = exp / 4.0,
+            totalBalance = totBal,
+            fundBalances = fundBals,
+            onDismiss = { showFridayAnnouncement = false }
+        )
     }
 }

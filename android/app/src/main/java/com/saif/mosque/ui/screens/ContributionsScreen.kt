@@ -15,13 +15,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -37,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,19 +58,25 @@ import com.saif.mosque.data.model.Contribution
 import com.saif.mosque.data.model.Donor
 import com.saif.mosque.data.model.Fund
 import com.saif.mosque.data.repository.LedgerRepository
+import com.saif.mosque.data.ledger.LedgerMath
+import com.saif.mosque.data.ledger.PrototypeLedgerDraft
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.ConfirmDialog
 import com.saif.mosque.ui.components.DatePickerField
 import com.saif.mosque.ui.components.DropdownField
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FridayCashCounterDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.MoneyText
+import com.saif.mosque.ui.components.ReceiptSlipDialog
 import com.saif.mosque.ui.components.StateBox
 import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
 import com.saif.mosque.util.Permissions
+import com.saif.mosque.util.ReceiptData
 import com.saif.mosque.util.UiState
 import com.saif.mosque.util.Validators
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -151,6 +161,12 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
 
+    val mosqueFlow = remember(mosqueId) { container.ledgerRepository.observeMosque(mosqueId).catch { emit(null) } }
+    val mosqueInfo by mosqueFlow.collectAsStateWithLifecycle(initialValue = null)
+    val scope = rememberCoroutineScope()
+    var showCashCounter by remember { mutableStateOf(false) }
+    var activeReceiptData by remember { mutableStateOf<ReceiptData?>(null) }
+
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
             snackbar.showSnackbar(when (msg) {
@@ -196,6 +212,10 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                             val d = LocalDate.of(ym.first, ym.second, 1).plusMonths(1)
                             ym = d.year to d.monthValue
                         }) { Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month)) }
+
+                        FilledTonalIconButton(onClick = { showCashCounter = true }) {
+                            Icon(Icons.Filled.Calculate, contentDescription = "জুমার বাক্স গণনা")
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -237,7 +257,23 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
                     saving = true; saveError = null
                     val done: (Msg?) -> Unit = { result ->
                         saving = false
-                        if (result == null) editing = null else saveError = when (result) {
+                        if (result == null) {
+                            editing = null
+                            val funds = (state as? UiState.Success)?.data?.second ?: emptyList()
+                            val fName = funds.firstOrNull { it.id == c.accountId }?.let { "${it.code} ${it.name}" } ?: ""
+                            activeReceiptData = ReceiptData(
+                                mosqueName = mosqueInfo?.name ?: "",
+                                mosqueAddress = mosqueInfo?.address ?: "",
+                                receiptNo = c.receiptNo,
+                                donorName = c.donorName,
+                                donorPhone = donors.find { it.id == c.donorId }?.phone ?: "",
+                                amount = c.amount,
+                                date = c.date,
+                                fundName = fName,
+                                purpose = "মসজিদ দান/অনুদানের",
+                                receivedBy = user.name
+                            )
+                        } else saveError = when (result) {
                             is Msg.Res -> context.getString(result.resId)
                             is Msg.Text -> result.message
                         }
@@ -250,6 +286,59 @@ fun ContributionsScreen(container: AppContainer, user: AppUser) {
     deleting?.let { c ->
         ConfirmDialog(stringResource(R.string.confirm_delete), stringResource(R.string.delete_question),
             onConfirm = { vm.delete(c) }, onDismiss = { deleting = null }, enabled = canEdit)
+    }
+
+    if (showCashCounter) {
+        val funds = (state as? UiState.Success)?.data?.second ?: emptyList()
+        FridayCashCounterDialog(
+            funds = funds,
+            onDismiss = { showCashCounter = false },
+            onSaveCollection = { amount, fundId, date, receiptNo, note ->
+                scope.launch {
+                    try {
+                        container.ledgerQueue.enqueue(
+                            PrototypeLedgerDraft(
+                                id = UUID.randomUUID().toString(),
+                                uid = user.id,
+                                mosqueId = mosqueId,
+                                kind = "contributions",
+                                amountPoisha = LedgerMath.poisha(amount, true),
+                                sourceFundId = fundId,
+                                donorId = "",
+                                donorName = "জুমার নামাজ দান বাক্স",
+                                receiptNo = receiptNo,
+                                date = date,
+                                note = note,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                        val fundObj = funds.find { it.id == fundId }
+                        activeReceiptData = ReceiptData(
+                            mosqueName = mosqueInfo?.name ?: "",
+                            mosqueAddress = mosqueInfo?.address ?: "",
+                            receiptNo = receiptNo,
+                            donorName = "জুমার নামাজ দান বাক্স",
+                            donorPhone = "",
+                            amount = amount,
+                            date = date,
+                            fundName = fundObj?.name ?: "সাধারণ তহবিল",
+                            purpose = "জুমার নামাজ দান বাক্স কালেকশন",
+                            receivedBy = user.name
+                        )
+                    } catch (_: Exception) {
+                    } finally {
+                        showCashCounter = false
+                    }
+                }
+            }
+        )
+    }
+
+    activeReceiptData?.let { receipt ->
+        ReceiptSlipDialog(
+            receipt = receipt,
+            onDismiss = { activeReceiptData = null }
+        )
     }
 }
 

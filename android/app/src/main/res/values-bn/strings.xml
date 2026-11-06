@@ -298,4 +298,6 @@
     <string name="save_as_members">সদস্য তালিকায় সেভ</string>
     <string name="members_saved_ok">সদস্য তালিকায় সফলভাবে যোগ হয়েছে</string>
     <string name="duplicate_collect_warning">যাদের এই মাসের টাকা ইতিমধ্যে দেওয়া হয়েছে তাদের বাদ দিয়ে বাকিদের কালেকশন করা হয়েছে</string>
+    <string name="payroll_title">কর্মী ও ইমাম-মুয়াজ্জিন বেতন</string>
+    <string name="projects_title">বিশেষ ইভেন্ট ও প্রজেক্ট ফান্ড</string>
 </resources>

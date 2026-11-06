@@ -35,10 +35,12 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -104,10 +106,13 @@ import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.EmptyBox
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.MoneyText
+import com.saif.mosque.ui.components.ReceiptSlipDialog
 import com.saif.mosque.ui.components.StatCard
 import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
 import com.saif.mosque.util.Permissions
+import com.saif.mosque.util.ReceiptData
+import com.saif.mosque.util.ReceiptHelper
 import com.saif.mosque.util.SubscriptionPdfExporter
 import com.saif.mosque.util.UiState
 import com.saif.mosque.util.VoiceExtractedItem
@@ -622,6 +627,7 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingMember by remember { mutableStateOf<Donor?>(null) }
     var collectingForMember by remember { mutableStateOf<MemberMonthlyStatus?>(null) }
+    var activeReceiptData by remember { mutableStateOf<ReceiptData?>(null) }
 
     // Speech Recognition Activity Result Launcher
     val speechLauncher = rememberLauncherForActivityResult(
@@ -855,6 +861,33 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
                                             scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.call_failed)) }
                                         }
                                     },
+                                    onSendReminder = { statusItem ->
+                                        val mLabel = Format.monthLabel(context, ym.second, ym.first)
+                                        val dueAmt = (statusItem.monthlyAmount - statusItem.paidAmount).coerceAtLeast(0.0)
+                                        val msg = ReceiptHelper.formatDuesReminderMessage(
+                                            mosqueName = mosqueInfo?.name ?: "",
+                                            memberName = statusItem.donor.name,
+                                            monthLabel = mLabel,
+                                            monthlyAmount = statusItem.monthlyAmount,
+                                            dueAmount = dueAmt
+                                        )
+                                        ReceiptHelper.sendViaWhatsApp(context, statusItem.donor.phone, msg)
+                                    },
+                                    onViewReceipt = if (item.isPaid) ({
+                                        val mLabel = Format.monthLabel(context, ym.second, ym.first)
+                                        activeReceiptData = ReceiptData(
+                                            mosqueName = mosqueInfo?.name ?: "",
+                                            mosqueAddress = mosqueInfo?.address ?: "",
+                                            receiptNo = item.lastReceiptNo ?: "",
+                                            donorName = item.donor.name,
+                                            donorPhone = item.donor.phone,
+                                            amount = item.paidAmount,
+                                            date = item.lastPaymentDate ?: Format.todayIso(),
+                                            fundName = currentFund?.let { "${it.code} - ${it.name}" } ?: "সাধারণ তহবিল",
+                                            purpose = "মাসিক বেতন/চাঁদা ($mLabel)",
+                                            receivedBy = user.name
+                                        )
+                                    }) else null,
                                     onCollect = { collectingForMember = item },
                                     onEdit = { editingMember = item.donor },
                                     onDelete = { vm.deleteMember(item.donor) }
@@ -921,7 +954,21 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
                         date = date,
                         receiptNo = receiptNo,
                         note = note
-                    ) { collectingForMember = null }
+                    ) {
+                        collectingForMember = null
+                        activeReceiptData = ReceiptData(
+                            mosqueName = mosqueInfo?.name ?: "",
+                            mosqueAddress = mosqueInfo?.address ?: "",
+                            receiptNo = receiptNo,
+                            donorName = memberStatus.donor.name,
+                            donorPhone = memberStatus.donor.phone,
+                            amount = amount,
+                            date = date,
+                            fundName = "${fund.code} - ${fund.name}",
+                            purpose = "মাসিক বেতন/চাঁদা ($monthLabel)",
+                            receivedBy = user.name
+                        )
+                    }
                 }
             )
         }
@@ -943,6 +990,13 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
             )
         }
     }
+
+    activeReceiptData?.let { receipt ->
+        ReceiptSlipDialog(
+            receipt = receipt,
+            onDismiss = { activeReceiptData = null }
+        )
+    }
 }
 
 @Composable
@@ -951,6 +1005,8 @@ private fun SubscriptionMemberCard(
     canCollect: Boolean,
     canEdit: Boolean,
     onCall: (String) -> Unit,
+    onSendReminder: (MemberMonthlyStatus) -> Unit,
+    onViewReceipt: (() -> Unit)? = null,
     onCollect: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -1046,15 +1102,29 @@ private fun SubscriptionMemberCard(
                         )
                     }
 
-                    // Direct Call Button
-                    FilledTonalButton(
-                        onClick = { onCall(status.donor.phone) },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(Icons.Filled.Call, contentDescription = stringResource(R.string.call_member), modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.call_member), style = MaterialTheme.typography.labelSmall)
+                    // Direct Call & Reminder Action Buttons
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilledTonalButton(
+                            onClick = { onCall(status.donor.phone) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Icon(Icons.Filled.Call, contentDescription = stringResource(R.string.call_member), modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.call_member), style = MaterialTheme.typography.labelSmall)
+                        }
+
+                        if (!status.isPaid) {
+                            FilledTonalButton(
+                                onClick = { onSendReminder(status) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Filled.Message, contentDescription = "তাগাদা", modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("তাগাদা", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
                     }
                 }
             }
@@ -1077,22 +1147,34 @@ private fun SubscriptionMemberCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Collect Button
-                if (canCollect) {
-                    Button(
-                        onClick = onCollect,
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                        modifier = Modifier.height(36.dp)
-                    ) {
-                        Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            if (status.isPaid) stringResource(R.string.add) else stringResource(R.string.collect_dues),
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                // Collect Button & View Receipt Button
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (canCollect) {
+                        Button(
+                            onClick = onCollect,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (status.isPaid) stringResource(R.string.add) else stringResource(R.string.collect_dues),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     }
-                } else {
-                    Spacer(Modifier.width(1.dp))
+
+                    if (status.isPaid && onViewReceipt != null) {
+                        FilledTonalButton(
+                            onClick = onViewReceipt,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("রশিদ", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                 }
 
                 // Edit / Delete buttons
