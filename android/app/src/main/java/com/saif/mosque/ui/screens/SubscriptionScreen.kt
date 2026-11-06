@@ -441,7 +441,7 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
         vm.messages.collect { msg ->
             val text = when (msg) {
                 is Msg.Res -> context.getString(msg.resId)
-                is Msg.Text -> msg.value
+                is Msg.Text -> msg.message
             }
             snackbarHostState.showSnackbar(text)
         }
@@ -943,6 +943,7 @@ private fun SubscriptionMemberCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddOrEditMemberDialog(
     initialDonor: Donor?,
@@ -1173,6 +1174,7 @@ private fun CollectDuesDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VoiceReviewDialog(
     items: List<VoiceExtractedItem>,
