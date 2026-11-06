@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -76,6 +77,7 @@ import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
 import com.saif.mosque.util.Permissions
 import com.saif.mosque.util.ReceiptData
+import com.saif.mosque.util.ReceiptHelper
 import com.saif.mosque.util.UiState
 import com.saif.mosque.util.Validators
 import java.util.UUID
@@ -360,7 +362,12 @@ internal fun ContributionFormDialog(
     var accountId by remember { mutableStateOf(initial.accountId) }
     var amount by remember { mutableStateOf(if (initial.amount > 0) initial.amount.toString() else "") }
     var date by remember { mutableStateOf(initial.date.ifBlank { Format.todayIso() }) }
-    var receipt by remember { mutableStateOf(initial.receiptNo) }
+    var receipt by remember {
+        mutableStateOf(
+            if (initial.receiptNo.isNotBlank()) initial.receiptNo
+            else ReceiptHelper.generateReceiptNo("REC", date)
+        )
+    }
     var note by remember { mutableStateOf(initial.note) }
     var attempted by remember { mutableStateOf(false) }
     val tooLong = stringResource(R.string.invitation_field_too_long)
@@ -408,6 +415,11 @@ internal fun ContributionFormDialog(
                 LabeledField(
                     stringResource(R.string.receipt_no), receipt, { receipt = it },
                     error = if (attempted) tooLong.takeIf { receipt.trim().length > 1000 } else null,
+                    trailingIcon = {
+                        IconButton(onClick = { receipt = ReceiptHelper.generateReceiptNo("REC", date) }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "রশিদ নং তৈরি করুন")
+                        }
+                    },
                     enabled = !saving
                 )
                 LabeledField(

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -561,7 +562,7 @@ class SubscriptionViewModel(
                         sourceFundId = fundId,
                         donorId = actualDonorId ?: "",
                         donorName = donorName,
-                        receiptNo = "",
+                        receiptNo = ReceiptHelper.generateReceiptNo("SUB", paymentDate),
                         date = paymentDate,
                         note = note,
                         createdAt = System.currentTimeMillis()
@@ -1397,7 +1398,7 @@ private fun CollectDuesDialog(
         mutableStateOf(if (initialAmount % 1.0 == 0.0) initialAmount.toLong().toString() else initialAmount.toString())
     }
     var date by remember { mutableStateOf(initialDate) }
-    var receiptNo by remember { mutableStateOf("") }
+    var receiptNo by remember { mutableStateOf(ReceiptHelper.generateReceiptNo("SUB", date)) }
     var note by remember { mutableStateOf("মাসিক বেতন/চাঁদা: $monthLabel") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -1445,7 +1446,12 @@ private fun CollectDuesDialog(
                 OutlinedTextField(
                     value = receiptNo,
                     onValueChange = { receiptNo = it },
-                    label = { Text("রসিদ নং (ঐচ্ছিক)") },
+                    label = { Text("রসিদ নং (অটো জেনারেট / ম্যানুয়াল)") },
+                    trailingIcon = {
+                        IconButton(onClick = { receiptNo = ReceiptHelper.generateReceiptNo("SUB", date) }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "রসিদ নং রিফ্রেশ")
+                        }
+                    },
                     singleLine = true,
                     enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()

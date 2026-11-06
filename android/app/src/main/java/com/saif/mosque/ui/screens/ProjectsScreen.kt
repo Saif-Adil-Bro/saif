@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -84,6 +85,7 @@ import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
 import com.saif.mosque.util.Permissions
 import com.saif.mosque.util.ReceiptData
+import com.saif.mosque.util.ReceiptHelper
 import com.saif.mosque.util.UiState
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -648,7 +650,7 @@ private fun CollectProjectDonationDialog(
     var donorPhone by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(Format.todayIso()) }
-    var receiptNo by remember { mutableStateOf("") }
+    var receiptNo by remember { mutableStateOf(ReceiptHelper.generateReceiptNo("PRJ", date)) }
     var note by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -704,7 +706,12 @@ private fun CollectProjectDonationDialog(
                 OutlinedTextField(
                     value = receiptNo,
                     onValueChange = { receiptNo = it },
-                    label = { Text("রশিদ নং (ঐচ্ছিক)") },
+                    label = { Text("রশিদ নং (অটো জেনারেট / ম্যানুয়াল)") },
+                    trailingIcon = {
+                        IconButton(onClick = { receiptNo = ReceiptHelper.generateReceiptNo("PRJ", date) }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "রশিদ নং রিফ্রেশ")
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

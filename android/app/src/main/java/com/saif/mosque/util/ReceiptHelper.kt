@@ -27,6 +27,20 @@ data class ReceiptData(
 
 object ReceiptHelper {
 
+    /**
+     * Generates an automatic, professional receipt or voucher number.
+     * Prefix examples:
+     * - "REC" for regular contributions / income (e.g. REC-261106-4821)
+     * - "EXP" for expenses / payment vouchers (e.g. EXP-261106-9312)
+     * - "SUB" for monthly subscription dues (e.g. SUB-261106-7241)
+     * - "PRJ" for special project donations (e.g. PRJ-261106-3829)
+     */
+    fun generateReceiptNo(prefix: String = "REC", dateIso: String = Format.todayIso()): String {
+        val datePart = dateIso.replace("-", "").takeLast(6)
+        val randomSuffix = (1000..9999).random()
+        return "$prefix-$datePart-$randomSuffix"
+    }
+
     fun formatDigitalSlipMessage(receipt: ReceiptData): String {
         val donorTitle = if (receipt.donorName.isNotBlank()) receipt.donorName.trim() else "সম্মানিত দ্বীনি ভাই"
         val cleanMosque = receipt.mosqueName.ifBlank { "মসজিদ" }
