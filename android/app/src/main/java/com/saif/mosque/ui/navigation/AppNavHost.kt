@@ -58,6 +58,7 @@ import com.saif.mosque.ui.screens.MembersScreen
 import com.saif.mosque.ui.screens.MoreScreen
 import com.saif.mosque.ui.screens.PlatformScreen
 import com.saif.mosque.ui.screens.ReportsScreen
+import com.saif.mosque.ui.screens.SubscriptionScreen
 import com.saif.mosque.ui.screens.TransfersScreen
 import com.saif.mosque.ui.viewmodel.AuthUiState
 import com.saif.mosque.ui.viewmodel.AuthViewModel
@@ -106,6 +107,7 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
                 composable(Screen.Contributions.route) { MosqueShell(nav, s.user, R.string.contributions) { ContributionsScreen(container, s.user) } }
                 composable(Screen.Expenses.route) { MosqueShell(nav, s.user, R.string.expenses) { ExpensesScreen(container, s.user) } }
                 composable(Screen.Donors.route) { MosqueShell(nav, s.user, R.string.donors) { DonorsScreen(container, s.user) } }
+                composable(Screen.Subscriptions.route) { MosqueShell(nav, s.user, R.string.subscriptions_title) { SubscriptionScreen(container, s.user) } }
                 composable(Screen.Members.route) { MosqueShell(nav, s.user, R.string.members) { MembersScreen(container, s.user) } }
                 composable(Screen.Transfers.route) { MosqueShell(nav, s.user, R.string.transfers) { TransfersScreen(container, s.user) } }
                 composable(Screen.Reports.route) { MosqueShell(nav, s.user, R.string.reports) { ReportsScreen(container, s.user) } }
@@ -137,7 +139,7 @@ fun MosqueShell(
 ) {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
-    val isSecondary = currentRoute in setOf(Screen.Donors.route, Screen.Members.route,
+    val isSecondary = currentRoute in setOf(Screen.Donors.route, Screen.Subscriptions.route, Screen.Members.route,
         Screen.Transfers.route, Screen.Reports.route)
     fun selected(item: NavItem) = currentRoute == item.screen.route ||
         (isSecondary && item.screen == Screen.More)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.CardMembership
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Logout
@@ -82,6 +83,7 @@ fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthView
             }
         }
         item { SectionTitle(stringResource(R.string.quick_access)) }
+        item { MenuCard(stringResource(R.string.subscriptions_title), Icons.Filled.CardMembership) { nav.navigate(Screen.Subscriptions.route) } }
         item { MenuCard(stringResource(R.string.donors), Icons.Filled.People) { nav.navigate(Screen.Donors.route) } }
         item { MenuCard(stringResource(R.string.members), Icons.Filled.Groups) { nav.navigate(Screen.Members.route) } }
         item { MenuCard(stringResource(R.string.transfers), Icons.Filled.SwapHoriz) { nav.navigate(Screen.Transfers.route) } }

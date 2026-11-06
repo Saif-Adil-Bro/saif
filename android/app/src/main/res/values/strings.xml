@@ -295,4 +295,34 @@
     <string name="audit_active_voided">Active entries: %1$d · Voided: %2$d</string>
     <string name="audit_action_update">Edited</string>
     <string name="audit_action_delete">Voided</string>
+
+    <!-- Subscriptions / Monthly Salary -->
+    <string name="subscriptions_title">Monthly Members</string>
+    <string name="monthly_subscription">Monthly Salary / Subscription</string>
+    <string name="add_subscription_member">Add Monthly Member</string>
+    <string name="edit_subscription_member">Edit Member</string>
+    <string name="monthly_amount">Monthly Amount (৳)</string>
+    <string name="collect_dues">Collect</string>
+    <string name="collect_for_month">Collect for %1$s</string>
+    <string name="voice_input">Voice Collection</string>
+    <string name="voice_input_hint">Say: \"Alamin 100, Robiul 200\"</string>
+    <string name="voice_extracting">Extracting from voice…</string>
+    <string name="voice_results_title">Voice Extracted Dues</string>
+    <string name="collect_all">Collect All</string>
+    <string name="collected_status">Paid</string>
+    <string name="pending_status">Pending</string>
+    <string name="partial_status">Partial</string>
+    <string name="call_member">Call member</string>
+    <string name="call_failed">Cannot open phone dialer</string>
+    <string name="destination_fund">Credit to Fund</string>
+    <string name="print_pdf_report">Print / PDF</string>
+    <string name="total_members">Total Members</string>
+    <string name="total_target">Target</string>
+    <string name="collected_amount">Collected</string>
+    <string name="pending_amount">Pending</string>
+    <string name="collection_rate">Rate</string>
+    <string name="member_already_paid">Already paid for this month</string>
+    <string name="select_existing_donor">Select from regular donors</string>
+    <string name="new_member_option">New Member</string>
+    <string name="no_voice_match">Could not detect names and amounts. Please try again.</string>
 </resources>

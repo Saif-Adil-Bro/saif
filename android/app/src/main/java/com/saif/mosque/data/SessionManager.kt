@@ -87,4 +87,14 @@ class SessionManager(private val context: Context) {
         locks.remove(email.trim().lowercase())
         writeLocks(locks)
     }
+
+    fun subscriptionFundFlow(mosqueId: String): Flow<String?> {
+        val key = stringPreferencesKey("sub_fund_$mosqueId")
+        return context.sessionDataStore.data.map { it[key] }
+    }
+
+    suspend fun setSubscriptionFund(mosqueId: String, fundId: String) {
+        val key = stringPreferencesKey("sub_fund_$mosqueId")
+        context.sessionDataStore.edit { it[key] = fundId }
+    }
 }

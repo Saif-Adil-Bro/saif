@@ -265,4 +265,34 @@
     <string name="audit_active_voided">সক্রিয় এন্ট্রি: %1$d · বাতিলকৃত: %2$d</string>
     <string name="audit_action_update">সংশোধিত</string>
     <string name="audit_action_delete">বাতিলকৃত</string>
+
+    <!-- Subscriptions / Monthly Salary -->
+    <string name="subscriptions_title">মাসিক বেতন/চাঁদা সদস্য</string>
+    <string name="monthly_subscription">মাসিক বেতন / চাঁদা</string>
+    <string name="add_subscription_member">নতুন সদস্য যোগ করুন</string>
+    <string name="edit_subscription_member">সদস্য তথ্য সম্পাদনা</string>
+    <string name="monthly_amount">মাসিক টাকার পরিমাণ (৳)</string>
+    <string name="collect_dues">টাকা নিন</string>
+    <string name="collect_for_month">%1$s মাসের টাকা গ্রহণ</string>
+    <string name="voice_input">ভয়েস কালেকশন</string>
+    <string name="voice_input_hint">ভয়েসে বলুন: \"আলামিন ১০০, রবিউল ২০০\"</string>
+    <string name="voice_extracting">ভয়েস থেকে নাম ও টাকা নেওয়া হচ্ছে…</string>
+    <string name="voice_results_title">ভয়েস থেকে পাওয়া তালিকা</string>
+    <string name="collect_all">সবগুলো কালেক্ট করুন</string>
+    <string name="collected_status">পরিশোধিত</string>
+    <string name="pending_status">বাকি</string>
+    <string name="partial_status">আংশিক</string>
+    <string name="call_member">সদস্যকে কল করুন</string>
+    <string name="call_failed">কল ডায়ালার চালু করা যায়নি</string>
+    <string name="destination_fund">জমা হওয়ার ফান্ড</string>
+    <string name="print_pdf_report">পিডিএফ প্রিন্ট</string>
+    <string name="total_members">মোট সদস্য</string>
+    <string name="total_target">মোট লক্ষ্যমাত্রা</string>
+    <string name="collected_amount">আদায় হয়েছে</string>
+    <string name="pending_amount">বকেয়া / বাকি</string>
+    <string name="collection_rate">আদায়ের হার</string>
+    <string name="member_already_paid">এই মাসের টাকা ইতিমধ্যে জমা হয়েছে</string>
+    <string name="select_existing_donor">বিদ্যমান দাতা থেকে যোগ করুন</string>
+    <string name="new_member_option">নতুন সদস্য</string>
+    <string name="no_voice_match">ভয়েস থেকে নাম ও টাকার পরিমাণ পাওয়া যায়নি। অনুগ্রহ করে আবার বলুন।</string>
 </resources>
