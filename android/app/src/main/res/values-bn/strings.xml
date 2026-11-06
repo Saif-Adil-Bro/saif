@@ -295,4 +295,7 @@
     <string name="select_existing_donor">বিদ্যমান দাতা থেকে যোগ করুন</string>
     <string name="new_member_option">নতুন সদস্য</string>
     <string name="no_voice_match">ভয়েস থেকে নাম ও টাকার পরিমাণ পাওয়া যায়নি। অনুগ্রহ করে আবার বলুন।</string>
+    <string name="save_as_members">সদস্য তালিকায় সেভ</string>
+    <string name="members_saved_ok">সদস্য তালিকায় সফলভাবে যোগ হয়েছে</string>
+    <string name="duplicate_collect_warning">যাদের এই মাসের টাকা ইতিমধ্যে দেওয়া হয়েছে তাদের বাদ দিয়ে বাকিদের কালেকশন করা হয়েছে</string>
 </resources>

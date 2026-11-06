@@ -325,4 +325,7 @@
     <string name="select_existing_donor">Select from regular donors</string>
     <string name="new_member_option">New Member</string>
     <string name="no_voice_match">Could not detect names and amounts. Please try again.</string>
+    <string name="save_as_members">Save as Members</string>
+    <string name="members_saved_ok">Members added to subscription list</string>
+    <string name="duplicate_collect_warning">Some members have already paid for this month and were skipped</string>
 </resources>

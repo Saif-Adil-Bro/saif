@@ -59,11 +59,19 @@ object VoiceLedgerParser {
         return normalized
     }
 
+    private val COMMON_TITLES = setOf(
+        "মোঃ", "মো:", "মো", "মুহাম্মদ", "মোহাম্মদ", "মাওলানা", "মওলানা", "হাফেজ", "মুফতি",
+        "আলহাজ্ব", "আলহাজ", "হাজী", "হাজি", "শেখ", "সৈয়দ", "সৈয়দ", "কাজী", "মুন্সী",
+        "মিয়া", "মিয়া", "ভাই", "চৌধুরী", "খান", "আহমেদ", "হোসেন", "আলী", "রহমান",
+        "ইসলাম", "মোল্লা", "সরদার", "md", "md.", "mohammad", "muhammad", "mr", "mr."
+    )
+
     fun parse(speechText: String, availableDonors: List<Donor> = emptyList()): List<VoiceExtractedItem> {
         if (speechText.isBlank()) return emptyList()
         val preprocessed = preprocess(speechText)
         val matches = EXTRACTION_REGEX.findAll(preprocessed)
         val list = mutableListOf<VoiceExtractedItem>()
+        val usedDonorIds = mutableSetOf<String>()
 
         for (m in matches) {
             var rawName = m.groupValues[1].trim()
@@ -72,7 +80,10 @@ object VoiceLedgerParser {
             val amount = m.groupValues[2].toDoubleOrNull() ?: continue
             if (rawName.isBlank() || amount <= 0.0) continue
 
-            val matchedDonor = findBestMatchingDonor(rawName, availableDonors)
+            val matchedDonor = findBestMatchingDonor(rawName, availableDonors, usedDonorIds)
+            if (matchedDonor != null && matchedDonor.id.isNotBlank()) {
+                usedDonorIds.add(matchedDonor.id)
+            }
             list.add(
                 VoiceExtractedItem(
                     rawName = rawName,
@@ -85,27 +96,44 @@ object VoiceLedgerParser {
         return list
     }
 
-    fun findBestMatchingDonor(name: String, donors: List<Donor>): Donor? {
+    fun findBestMatchingDonor(name: String, donors: List<Donor>, excludeIds: Set<String> = emptySet()): Donor? {
         if (donors.isEmpty() || name.isBlank()) return null
+        val candidates = if (excludeIds.isEmpty()) donors else donors.filter { it.id.isBlank() || it.id !in excludeIds }
+        if (candidates.isEmpty()) return null
+
         val cleanQuery = name.trim().lowercase()
 
-        // 1. Exact match
-        donors.find { it.name.trim().equals(cleanQuery, ignoreCase = true) }?.let { return it }
+        // 1. Exact match (case-insensitive)
+        candidates.find { it.name.trim().equals(cleanQuery, ignoreCase = true) }?.let { return it }
 
-        // 2. Donor name contains query
-        donors.find { it.name.trim().lowercase().contains(cleanQuery) }?.let { return it }
+        // 2. Donor name contains exact query (if query has meaningful length)
+        if (cleanQuery.length >= 3) {
+            candidates.find { it.name.trim().lowercase().contains(cleanQuery) }?.let { return it }
+        }
 
-        // 3. Query contains donor name
-        donors.find { cleanQuery.contains(it.name.trim().lowercase()) }?.let { return it }
+        // 3. Query contains donor name (if donor name has meaningful length)
+        candidates.find {
+            val dName = it.name.trim().lowercase()
+            dName.length >= 3 && cleanQuery.contains(dName)
+        }?.let { return it }
 
-        // 4. Token overlap
-        val queryTokens = cleanQuery.split("\\s+".toRegex()).filter { it.length > 2 }
-        for (donor in donors) {
-            val donorTokens = donor.name.trim().lowercase().split("\\s+".toRegex()).filter { it.length > 2 }
-            if (queryTokens.any { q -> donorTokens.contains(q) }) {
-                return donor
+        // 4. Distinctive Token overlap (ignoring common titles like মোঃ, মাওলানা, রহমান etc.)
+        val queryTokens = cleanQuery.split("\\s+".toRegex())
+            .map { it.trim().trim(':', '.', ',') }
+            .filter { it.length > 2 && it !in COMMON_TITLES }
+
+        if (queryTokens.isNotEmpty()) {
+            for (donor in candidates) {
+                val donorTokens = donor.name.trim().lowercase().split("\\s+".toRegex())
+                    .map { it.trim().trim(':', '.', ',') }
+                    .filter { it.length > 2 && it !in COMMON_TITLES }
+
+                if (queryTokens.any { q -> donorTokens.contains(q) }) {
+                    return donor
+                }
             }
         }
+
         return null
     }
 }

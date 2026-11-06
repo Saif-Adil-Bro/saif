@@ -76,6 +76,23 @@ class VoiceLedgerParserTest {
     }
 
     @Test
+    fun doesNotFalseMatchOnCommonHonorificMdPrefix() {
+        val donors = listOf(
+            Donor(id = "d1", name = "মোঃ আলামিন"),
+            Donor(id = "d2", name = "মোঃ রবিউল"),
+            Donor(id = "d3", name = "মোঃ হাবিব")
+        )
+        val input = "মোঃ রবিউল ৫০০, মোঃ হাবিব ৩০০"
+        val results = VoiceLedgerParser.parse(input, donors)
+
+        assertEquals(2, results.size)
+        assertEquals("d2", results[0].matchedDonorId)
+        assertEquals("মোঃ রবিউল", results[0].matchedDonorName)
+        assertEquals("d3", results[1].matchedDonorId)
+        assertEquals("মোঃ হাবিব", results[1].matchedDonorName)
+    }
+
+    @Test
     fun subscriptionMemberHelpers() {
         val original = Donor(id = "sub1", name = "রবিউল", phone = "01712345678", address = "উত্তর পাড়া")
         val withSub = original.withSubscriptionAmount(500.0)

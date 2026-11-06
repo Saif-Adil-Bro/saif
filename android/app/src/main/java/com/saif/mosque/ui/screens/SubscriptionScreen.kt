@@ -81,6 +81,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.firebase.auth.FirebaseAuth
+import com.google.gson.Gson
 import com.saif.mosque.R
 import com.saif.mosque.data.SessionManager
 import com.saif.mosque.data.ledger.LedgerMath
@@ -158,15 +159,80 @@ class SubscriptionViewModel(
         .catch { emit(null) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val allDonors: StateFlow<List<Donor>> = repo.observeDonors(mosqueId)
-        .map { it.filter { d -> d.active } }
-        .catch { emit(emptyList()) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val gson = Gson()
+
+    val allDonors: StateFlow<List<Donor>> = combine(
+        repo.observeDonors(mosqueId).map { it.filter { d -> d.active } }.catch { emit(emptyList()) },
+        outbox.observe(user.id, mosqueId, "donors").catch { emit(emptyList()) }
+    ) { firestoreDonors, drafts ->
+        val donorMap = firestoreDonors.associateBy { it.id }.toMutableMap()
+        for (draft in drafts) {
+            try {
+                when (draft.action) {
+                    "add" -> {
+                        if (!donorMap.containsKey(draft.id)) {
+                            val parsed = gson.fromJson(draft.payload, Donor::class.java).copy(id = draft.id)
+                            if (parsed.active) {
+                                donorMap[draft.id] = parsed
+                            }
+                        }
+                    }
+                    "update" -> {
+                        val targetId = draft.targetId
+                        if (!targetId.isNullOrBlank()) {
+                            val parsed = gson.fromJson(draft.payload, Donor::class.java).copy(id = targetId)
+                            if (parsed.active) {
+                                donorMap[targetId] = parsed
+                            } else {
+                                donorMap.remove(targetId)
+                            }
+                        }
+                    }
+                    "archive" -> {
+                        val targetId = draft.targetId
+                        if (!targetId.isNullOrBlank()) {
+                            donorMap.remove(targetId)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Ignore invalid local draft
+            }
+        }
+        donorMap.values.toList().sortedBy { it.name }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val monthContributions: StateFlow<List<Contribution>> = _yearMonth.flatMapLatest { (y, m) ->
-        val (start, end) = Format.yearMonthIso(y, m)
-        repo.observeMonthContributions(mosqueId, start, end).catch { emit(emptyList()) }
+    val monthContributions: StateFlow<List<Contribution>> = combine(
+        _yearMonth.flatMapLatest { (y, m) ->
+            val (start, end) = Format.yearMonthIso(y, m)
+            repo.observeMonthContributions(mosqueId, start, end).catch { emit(emptyList()) }
+        },
+        _yearMonth.flatMapLatest { (y, m) ->
+            val (start, end) = Format.yearMonthIso(y, m)
+            queue.store.observe(user.id, mosqueId, "contributions").map { queuedList ->
+                queuedList.filter { q ->
+                    q.state != "BLOCKED" && q.draft.date >= start && q.draft.date <= end
+                }.map { q ->
+                    Contribution(
+                        id = q.draft.id,
+                        mosqueId = q.draft.mosqueId,
+                        donorId = q.draft.donorId,
+                        donorName = q.draft.donorName,
+                        accountId = q.draft.sourceFundId,
+                        amount = LedgerMath.taka(q.draft.amountPoisha),
+                        date = q.draft.date,
+                        note = q.draft.note,
+                        receiptNo = q.draft.receiptNo,
+                        createdBy = q.draft.uid,
+                        createdAt = q.draft.createdAt
+                    )
+                }
+            }.catch { emit(emptyList()) }
+        }
+    ) { firestoreList, localList ->
+        val existingIds = firestoreList.map { it.id }.toSet()
+        firestoreList + localList.filter { it.id !in existingIds }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val membersStatus: StateFlow<UiState<List<MemberMonthlyStatus>>> = combine(
@@ -177,8 +243,12 @@ class SubscriptionViewModel(
         val list = subDonors.map { d ->
             val pledged = d.monthlySubscriptionAmount() ?: 0.0
             val related = contributions.filter { c ->
-                (c.donorId.isNotBlank() && c.donorId == d.id) ||
-                    (c.donorId.isBlank() && c.donorName.trim().equals(d.name.trim(), ignoreCase = true))
+                if (d.id.isNotBlank()) {
+                    c.donorId == d.id ||
+                        (c.donorId.isBlank() && c.donorName.isNotBlank() && c.donorName.trim().equals(d.name.trim(), ignoreCase = true))
+                } else {
+                    c.donorId.isBlank() && c.donorName.isNotBlank() && c.donorName.trim().equals(d.name.trim(), ignoreCase = true)
+                }
             }
             val paid = related.sumOf { Math.round(it.amount * 100) } / 100.0
             val lastContribution = related.maxByOrNull { it.createdAt }
@@ -300,6 +370,21 @@ class SubscriptionViewModel(
         onDone: () -> Unit
     ) = viewModelScope.launch {
         try {
+            val pledged = donor.monthlySubscriptionAmount() ?: 0.0
+            val alreadyPaid = monthContributions.value.filter { c ->
+                if (donor.id.isNotBlank()) {
+                    c.donorId == donor.id || (c.donorId.isBlank() && c.donorName.isNotBlank() && c.donorName.trim().equals(donor.name.trim(), ignoreCase = true))
+                } else {
+                    c.donorId.isBlank() && c.donorName.isNotBlank() && c.donorName.trim().equals(donor.name.trim(), ignoreCase = true)
+                }
+            }.sumOf { Math.round(it.amount * 100) } / 100.0
+
+            if (pledged > 0.0 && alreadyPaid >= pledged) {
+                _messages.emit(Msg.Res(R.string.member_already_paid))
+                onDone()
+                return@launch
+            }
+
             queue.enqueue(
                 PrototypeLedgerDraft(
                     id = UUID.randomUUID().toString(),
@@ -354,6 +439,47 @@ class SubscriptionViewModel(
         }
     }
 
+    fun saveVoiceAsMembers(items: List<VoiceExtractedItem>) = viewModelScope.launch {
+        val existingDonors = allDonors.value
+        for (item in items) {
+            if (item.amount <= 0.0) continue
+            val matchedId = item.matchedDonorId
+            val existing = if (!matchedId.isNullOrBlank()) {
+                existingDonors.find { it.id == matchedId }
+            } else {
+                existingDonors.find { it.name.trim().equals(item.rawName.trim(), ignoreCase = true) }
+            }
+
+            try {
+                if (existing != null) {
+                    val updated = existing.withSubscriptionAmount(item.amount)
+                    val draft = outbox.editDonor(user.id, mosqueId, existing, updated)
+                    runCatching {
+                        DirectorySync.schedule(context, draft.id)
+                        DirectorySync.scheduleRecovery(context)
+                    }
+                } else {
+                    val newDonor = Donor(
+                        name = item.rawName.trim(),
+                        phone = "",
+                        address = ""
+                    ).withSubscriptionAmount(item.amount)
+                    val draft = outbox.addDonor(user.id, mosqueId, newDonor)
+                    runCatching {
+                        DirectorySync.schedule(context, draft.id)
+                        DirectorySync.scheduleRecovery(context)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Continue with remaining
+            }
+        }
+        voiceReviewItems = null
+        _messages.emit(Msg.Res(R.string.members_saved_ok))
+    }
+
     fun commitVoiceCollection(fundId: String, items: List<VoiceExtractedItem>) = viewModelScope.launch {
         val (y, m) = _yearMonth.value
         val today = LocalDate.now()
@@ -366,25 +492,53 @@ class SubscriptionViewModel(
         val note = "${context.getString(R.string.monthly_subscription)}: $monthLabel"
 
         var count = 0
+        var skippedAlreadyPaid = 0
+        val currentDonors = allDonors.value
+        val existingContributions = monthContributions.value
+
         for (item in items) {
             if (item.amount <= 0.0) continue
             val donorId = item.matchedDonorId
             val donorName = item.matchedDonorName ?: item.rawName.trim()
 
+            val alreadyPaid = existingContributions.filter { c ->
+                if (!donorId.isNullOrBlank()) {
+                    c.donorId == donorId || (c.donorId.isBlank() && c.donorName.trim().equals(donorName, ignoreCase = true))
+                } else {
+                    c.donorId.isBlank() && c.donorName.trim().equals(donorName, ignoreCase = true)
+                }
+            }.sumOf { Math.round(it.amount * 100) } / 100.0
+
+            if (alreadyPaid >= item.amount) {
+                skippedAlreadyPaid++
+                continue
+            }
+
             try {
                 var actualDonorId = donorId
                 if (actualDonorId.isNullOrBlank()) {
-                    // Create new donor with subscription pledge
-                    val newDonor = Donor(
-                        name = donorName,
-                        phone = "",
-                        address = ""
-                    ).withSubscriptionAmount(item.amount)
-                    val draft = outbox.addDonor(user.id, mosqueId, newDonor)
-                    actualDonorId = draft.id
-                    runCatching {
-                        DirectorySync.schedule(context, draft.id)
-                        DirectorySync.scheduleRecovery(context)
+                    val matchByName = currentDonors.find { it.name.trim().equals(donorName, ignoreCase = true) }
+                    if (matchByName != null) {
+                        actualDonorId = matchByName.id
+                        if (!matchByName.isSubscriptionMember()) {
+                            val draft = outbox.editDonor(user.id, mosqueId, matchByName, matchByName.withSubscriptionAmount(item.amount))
+                            runCatching {
+                                DirectorySync.schedule(context, draft.id)
+                                DirectorySync.scheduleRecovery(context)
+                            }
+                        }
+                    } else {
+                        val newDonor = Donor(
+                            name = donorName,
+                            phone = "",
+                            address = ""
+                        ).withSubscriptionAmount(item.amount)
+                        val draft = outbox.addDonor(user.id, mosqueId, newDonor)
+                        actualDonorId = draft.id
+                        runCatching {
+                            DirectorySync.schedule(context, draft.id)
+                            DirectorySync.scheduleRecovery(context)
+                        }
                     }
                 }
 
@@ -394,7 +548,7 @@ class SubscriptionViewModel(
                         uid = user.id,
                         mosqueId = mosqueId,
                         kind = "contributions",
-                        amountPoisha = LedgerMath.poisha(item.amount, true),
+                        amountPoisha = LedgerMath.poisha(item.amount - alreadyPaid, true),
                         sourceFundId = fundId,
                         donorId = actualDonorId ?: "",
                         donorName = donorName,
@@ -412,7 +566,13 @@ class SubscriptionViewModel(
             }
         }
         voiceReviewItems = null
-        _messages.emit(Msg.Res(R.string.saved_ok))
+        if (skippedAlreadyPaid > 0 && count > 0) {
+            _messages.emit(Msg.Res(R.string.duplicate_collect_warning))
+        } else if (count > 0) {
+            _messages.emit(Msg.Res(R.string.saved_ok))
+        } else if (skippedAlreadyPaid > 0) {
+            _messages.emit(Msg.Res(R.string.member_already_paid))
+        }
     }
 }
 
@@ -677,7 +837,10 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(bottom = 80.dp)
                         ) {
-                            items(filteredList, key = { it.donor.id }) { item ->
+                            items(
+                                items = filteredList,
+                                key = { if (it.donor.id.isNotBlank()) it.donor.id else "${it.donor.name}_${it.donor.phone}_${it.donor.address}" }
+                            ) { item ->
                                 SubscriptionMemberCard(
                                     status = item,
                                     canCollect = vm.canCollect,
@@ -710,8 +873,12 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
             initialDonor = null,
             allExistingDonors = allDonorsList,
             onDismiss = { showAddDialog = false },
-            onSave = { name, amount, phone, address ->
-                vm.addMember(name, amount, phone, address) { showAddDialog = false }
+            onSave = { existingDonor, name, amount, phone, address ->
+                if (existingDonor != null) {
+                    vm.updateMember(existingDonor, name, amount, phone, address) { showAddDialog = false }
+                } else {
+                    vm.addMember(name, amount, phone, address) { showAddDialog = false }
+                }
             }
         )
     }
@@ -722,7 +889,7 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
             initialDonor = donorToEdit,
             allExistingDonors = emptyList(),
             onDismiss = { editingMember = null },
-            onSave = { name, amount, phone, address ->
+            onSave = { _, name, amount, phone, address ->
                 vm.updateMember(donorToEdit, name, amount, phone, address) { editingMember = null }
             }
         )
@@ -771,6 +938,7 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
                 onDismiss = { vm.dismissVoiceReview() },
                 onItemUpdate = { idx, updated -> vm.updateVoiceItem(idx, updated) },
                 onItemDelete = { idx -> vm.removeVoiceItem(idx) },
+                onSaveAsMembers = { vm.saveVoiceAsMembers(items) },
                 onCommitAll = { vm.commitVoiceCollection(fund.id, items) }
             )
         }
@@ -949,8 +1117,9 @@ private fun AddOrEditMemberDialog(
     initialDonor: Donor?,
     allExistingDonors: List<Donor>,
     onDismiss: () -> Unit,
-    onSave: (name: String, amount: Double, phone: String, address: String) -> Unit
+    onSave: (existingDonor: Donor?, name: String, amount: Double, phone: String, address: String) -> Unit
 ) {
+    var selectedExistingDonor by remember { mutableStateOf<Donor?>(null) }
     var name by remember { mutableStateOf(initialDonor?.name ?: "") }
     var amountText by remember {
         mutableStateOf(
@@ -962,6 +1131,7 @@ private fun AddOrEditMemberDialog(
     var phone by remember { mutableStateOf(initialDonor?.phone ?: "") }
     var address by remember { mutableStateOf(initialDonor?.cleanDisplayAddress() ?: "") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     // Donor picker for new member
     val nonSubDonors = remember(allExistingDonors) {
@@ -970,7 +1140,7 @@ private fun AddOrEditMemberDialog(
     var existingDropdownExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
         title = {
             Text(
                 if (initialDonor == null) stringResource(R.string.add_subscription_member)
@@ -986,11 +1156,11 @@ private fun AddOrEditMemberDialog(
                 if (initialDonor == null && nonSubDonors.isNotEmpty()) {
                     ExposedDropdownMenuBox(
                         expanded = existingDropdownExpanded,
-                        onExpandedChange = { existingDropdownExpanded = !existingDropdownExpanded },
+                        onExpandedChange = { if (!isSubmitting) existingDropdownExpanded = !existingDropdownExpanded },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         OutlinedTextField(
-                            value = stringResource(R.string.select_existing_donor),
+                            value = selectedExistingDonor?.name ?: stringResource(R.string.select_existing_donor),
                             onValueChange = {},
                             readOnly = true,
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = existingDropdownExpanded) },
@@ -1001,10 +1171,21 @@ private fun AddOrEditMemberDialog(
                             expanded = existingDropdownExpanded,
                             onDismissRequest = { existingDropdownExpanded = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.new_member_option)) },
+                                onClick = {
+                                    selectedExistingDonor = null
+                                    name = ""
+                                    phone = ""
+                                    address = ""
+                                    existingDropdownExpanded = false
+                                }
+                            )
                             nonSubDonors.forEach { d ->
                                 DropdownMenuItem(
                                     text = { Text("${d.name} (${d.phone.ifBlank { "ফোন নম্বর নেই" }})") },
                                     onClick = {
+                                        selectedExistingDonor = d
                                         name = d.name
                                         phone = d.phone
                                         address = d.address
@@ -1022,6 +1203,7 @@ private fun AddOrEditMemberDialog(
                     onValueChange = { name = it; errorMsg = null },
                     label = { Text(stringResource(R.string.name) + " *") },
                     singleLine = true,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1032,6 +1214,7 @@ private fun AddOrEditMemberDialog(
                     placeholder = { Text("৫০০") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1042,6 +1225,7 @@ private fun AddOrEditMemberDialog(
                     placeholder = { Text("01XXXXXXXXX") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     singleLine = true,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1051,6 +1235,7 @@ private fun AddOrEditMemberDialog(
                     label = { Text(stringResource(R.string.address) + " (ঐচ্ছিক)") },
                     singleLine = false,
                     maxLines = 2,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1060,23 +1245,27 @@ private fun AddOrEditMemberDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
-                val parsedAmount = VoiceLedgerParser.normalizeBengaliDigits(amountText).toDoubleOrNull()
-                if (name.isBlank()) {
-                    errorMsg = "নাম আবশ্যক"
-                    return@Button
+            Button(
+                enabled = !isSubmitting,
+                onClick = {
+                    val parsedAmount = VoiceLedgerParser.normalizeBengaliDigits(amountText).toDoubleOrNull()
+                    if (name.isBlank()) {
+                        errorMsg = "নাম আবশ্যক"
+                        return@Button
+                    }
+                    if (parsedAmount == null || parsedAmount <= 0.0) {
+                        errorMsg = "সঠিক মাসিক টাকার পরিমাণ দিন"
+                        return@Button
+                    }
+                    isSubmitting = true
+                    onSave(selectedExistingDonor, name.trim(), parsedAmount, phone.trim(), address.trim())
                 }
-                if (parsedAmount == null || parsedAmount <= 0.0) {
-                    errorMsg = "সঠিক মাসিক টাকার পরিমাণ দিন"
-                    return@Button
-                }
-                onSave(name.trim(), parsedAmount, phone.trim(), address.trim())
-            }) {
+            ) {
                 Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(enabled = !isSubmitting, onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -1098,9 +1287,10 @@ private fun CollectDuesDialog(
     var receiptNo by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("মাসিক বেতন/চাঁদা: $monthLabel") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
         title = { Text(stringResource(R.string.collect_for_month, monthLabel)) },
         text = {
             Column(
@@ -1124,6 +1314,7 @@ private fun CollectDuesDialog(
                     label = { Text(stringResource(R.string.amount) + " (৳) *") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1132,6 +1323,7 @@ private fun CollectDuesDialog(
                     onValueChange = { date = it },
                     label = { Text(stringResource(R.string.date) + " (YYYY-MM-DD)") },
                     singleLine = true,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1140,6 +1332,7 @@ private fun CollectDuesDialog(
                     onValueChange = { receiptNo = it },
                     label = { Text("রসিদ নং (ঐচ্ছিক)") },
                     singleLine = true,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1148,6 +1341,7 @@ private fun CollectDuesDialog(
                     onValueChange = { note = it },
                     label = { Text(stringResource(R.string.note)) },
                     singleLine = true,
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1157,19 +1351,23 @@ private fun CollectDuesDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
-                val amt = VoiceLedgerParser.normalizeBengaliDigits(amountText).toDoubleOrNull()
-                if (amt == null || amt <= 0.0) {
-                    errorMsg = "সঠিক পরিমাণ দিন"
-                    return@Button
+            Button(
+                enabled = !isSubmitting,
+                onClick = {
+                    val amt = VoiceLedgerParser.normalizeBengaliDigits(amountText).toDoubleOrNull()
+                    if (amt == null || amt <= 0.0) {
+                        errorMsg = "সঠিক পরিমাণ দিন"
+                        return@Button
+                    }
+                    isSubmitting = true
+                    onConfirm(amt, date.trim(), receiptNo.trim(), note.trim())
                 }
-                onConfirm(amt, date.trim(), receiptNo.trim(), note.trim())
-            }) {
+            ) {
                 Text(stringResource(R.string.collect_dues))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(enabled = !isSubmitting, onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -1183,12 +1381,14 @@ private fun VoiceReviewDialog(
     onDismiss: () -> Unit,
     onItemUpdate: (Int, VoiceExtractedItem) -> Unit,
     onItemDelete: (Int) -> Unit,
+    onSaveAsMembers: () -> Unit,
     onCommitAll: () -> Unit
 ) {
     val totalAmount = items.sumOf { it.amount }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
         title = {
             Column {
                 Text(stringResource(R.string.voice_results_title), fontWeight = FontWeight.Bold)
@@ -1227,7 +1427,11 @@ private fun VoiceReviewDialog(
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f)
                                 )
-                                IconButton(onClick = { onItemDelete(idx) }, modifier = Modifier.size(28.dp)) {
+                                IconButton(
+                                    onClick = { onItemDelete(idx) },
+                                    enabled = !isSubmitting,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
                                     Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                                 }
                             }
@@ -1249,6 +1453,7 @@ private fun VoiceReviewDialog(
                                     },
                                     label = { Text(stringResource(R.string.name)) },
                                     singleLine = true,
+                                    enabled = !isSubmitting,
                                     modifier = Modifier.weight(1.2f)
                                 )
 
@@ -1262,6 +1467,7 @@ private fun VoiceReviewDialog(
                                     label = { Text("টাকা (৳)") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true,
+                                    enabled = !isSubmitting,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -1285,12 +1491,29 @@ private fun VoiceReviewDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onCommitAll) {
-                Text(stringResource(R.string.collect_all))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilledTonalButton(
+                    enabled = !isSubmitting && items.isNotEmpty(),
+                    onClick = {
+                        isSubmitting = true
+                        onSaveAsMembers()
+                    }
+                ) {
+                    Text(stringResource(R.string.save_as_members))
+                }
+                Button(
+                    enabled = !isSubmitting && items.isNotEmpty(),
+                    onClick = {
+                        isSubmitting = true
+                        onCommitAll()
+                    }
+                ) {
+                    Text(stringResource(R.string.collect_dues))
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(enabled = !isSubmitting, onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
