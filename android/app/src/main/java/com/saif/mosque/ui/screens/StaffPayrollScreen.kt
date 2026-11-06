@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -264,100 +265,109 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) }
     ) { innerPadding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
-        ) {
-            // Month navigation
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        when (val s = state) {
+            is UiState.Loading -> com.saif.mosque.ui.components.CenteredProgress()
+            is UiState.Error -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { vm.prevMonth() }) {
-                        Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.prev_month))
-                    }
-                    Text(
-                        Format.monthLabel(context, ym.second, ym.first),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = { vm.nextMonth() }) {
-                        Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Text(
-                        "স্টাফ বেতন শীট",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
+                Text(s.message, color = MaterialTheme.colorScheme.error)
             }
+            is UiState.Success -> {
+                val (items, funds) = s.data
+                val totalDesignated = items.sumOf { it.designatedSalary }
+                val totalPaid = items.filter { it.isPaid }.sumOf { it.paidExpense?.amount ?: it.designatedSalary }
+                val paidCount = items.count { it.isPaid }
+                val pendingCount = items.size - paidCount
 
-            Spacer(Modifier.height(12.dp))
-
-            when (val s = state) {
-                is UiState.Loading -> com.saif.mosque.ui.components.CenteredProgress()
-                is UiState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
-                is UiState.Success -> {
-                    val (items, funds) = s.data
-                    val totalDesignated = items.sumOf { it.designatedSalary }
-                    val totalPaid = items.filter { it.isPaid }.sumOf { it.paidExpense?.amount ?: it.designatedSalary }
-                    val paidCount = items.count { it.isPaid }
-                    val pendingCount = items.size - paidCount
-
-                    // KPI Stats
-                    com.saif.mosque.ui.components.StatsGrid(
-                        listOf(
-                            com.saif.mosque.ui.components.StatItem("মোট কর্মী", "${items.size} জন"),
-                            com.saif.mosque.ui.components.StatItem("মোট বেতন বাজেট", Format.money(totalDesignated)),
-                            com.saif.mosque.ui.components.StatItem("পরিশোধিত", Format.money(totalPaid), MaterialTheme.colorScheme.primary),
-                            com.saif.mosque.ui.components.StatItem("বকেয়া কর্মী", "$pendingCount জন", if (pendingCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                        )
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    if (items.isEmpty()) {
-                        EmptyBox("কোন স্টাফ বা ইমাম-মুয়াজ্জিন সদস্য পাওয়া যায়নি। মেম্বার্স মেনু থেকে পদবি দিয়ে সদস্য যুক্ত করুন।")
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(bottom = 60.dp)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 68.dp)
+                ) {
+                    // 1. Month navigation
+                    item(key = "payroll_month_header") {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            items(items, key = { it.user.id }) { item ->
-                                StaffPayrollCard(
-                                    item = item,
-                                    canEdit = vm.canEdit,
-                                    onPaySalary = { payingStaff = item },
-                                    onEditSalary = { editingSalaryFor = item.user },
-                                    onViewReceipt = { exp ->
-                                        activeReceiptData = ReceiptData(
-                                            mosqueName = "",
-                                            receiptNo = exp.receiptNo,
-                                            donorName = exp.paidTo,
-                                            donorPhone = item.user.phone,
-                                            amount = exp.amount,
-                                            date = exp.date,
-                                            fundName = "বেতন ফান্ড",
-                                            purpose = exp.title,
-                                            receivedBy = exp.createdBy
-                                        )
-                                    }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { vm.prevMonth() }) {
+                                    Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.prev_month))
+                                }
+                                Text(
+                                    Format.monthLabel(context, ym.second, ym.first),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                IconButton(onClick = { vm.nextMonth() }) {
+                                    Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    "স্টাফ বেতন শীট",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
+                        }
+                    }
+
+                    // 2. KPI Stats
+                    item(key = "payroll_kpi_stats") {
+                        com.saif.mosque.ui.components.StatsGrid(
+                            listOf(
+                                com.saif.mosque.ui.components.StatItem("মোট কর্মী", "${items.size} জন"),
+                                com.saif.mosque.ui.components.StatItem("মোট বেতন বাজেট", Format.money(totalDesignated)),
+                                com.saif.mosque.ui.components.StatItem("পরিশোধিত", Format.money(totalPaid), MaterialTheme.colorScheme.primary),
+                                com.saif.mosque.ui.components.StatItem("বকেয়া কর্মী", "$pendingCount জন", if (pendingCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                            )
+                        )
+                    }
+
+                    // 3. Staff items
+                    if (items.isEmpty()) {
+                        item(key = "empty_staff_box") {
+                            EmptyBox("কোন স্টাফ বা ইমাম-মুয়াজ্জিন সদস্য পাওয়া যায়নি। মেম্বার্স মেনু থেকে পদবি দিয়ে সদস্য যুক্ত করুন।")
+                        }
+                    } else {
+                        items(items, key = { it.user.id }) { item ->
+                            StaffPayrollCard(
+                                item = item,
+                                canEdit = vm.canEdit,
+                                onPaySalary = { payingStaff = item },
+                                onEditSalary = { editingSalaryFor = item.user },
+                                onViewReceipt = { exp ->
+                                    activeReceiptData = ReceiptData(
+                                        mosqueName = "",
+                                        receiptNo = exp.receiptNo,
+                                        donorName = exp.paidTo,
+                                        donorPhone = item.user.phone,
+                                        amount = exp.amount,
+                                        date = exp.date,
+                                        fundName = "বেতন ফান্ড",
+                                        purpose = exp.title,
+                                        receivedBy = exp.createdBy
+                                    )
+                                }
+                            )
                         }
                     }
                 }

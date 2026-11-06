@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -662,6 +663,7 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             if (vm.canEdit) {
@@ -675,224 +677,235 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
             }
         }
     ) { innerPadding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
-        ) {
-            // Month navigation and Action bar
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        when (val s = state) {
+            is UiState.Loading -> com.saif.mosque.ui.components.CenteredProgress()
+            is UiState.Error -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { vm.prevMonth() }) {
-                        Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.prev_month))
-                    }
-                    Text(
-                        Format.monthLabel(context, ym.second, ym.first),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = { vm.nextMonth() }) {
-                        Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilledTonalIconButton(onClick = { launchSpeech() }) {
-                        Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.voice_input))
-                    }
-                    IconButton(onClick = {
-                        val currentList = (state as? UiState.Success)?.data ?: emptyList()
-                        val fundTitle = currentFund?.let { "${it.code} ${it.name}" } ?: "সাধারণ তহবিল"
-                        val monthLabel = Format.monthLabel(context, ym.second, ym.first)
-                        SubscriptionPdfExporter.printMonthlyReport(
-                            context = context,
-                            mosque = mosqueInfo,
-                            monthYearLabel = monthLabel,
-                            fundName = fundTitle,
-                            members = currentList
-                        )
-                    }) {
-                        Icon(Icons.Filled.Print, contentDescription = stringResource(R.string.print_pdf_report))
-                    }
-                }
+                Text(s.message, color = MaterialTheme.colorScheme.error)
             }
+            is UiState.Success -> {
+                val list = s.data
+                val totalMembers = list.size
+                val totalTarget = list.sumOf { it.monthlyAmount }
+                val totalCollected = list.sumOf { it.paidAmount }
+                val totalPending = (totalTarget - totalCollected).coerceAtLeast(0.0)
+                val paidCount = list.count { it.isPaid }
+                val pendingCount = totalMembers - paidCount
 
-            Spacer(Modifier.height(8.dp))
+                val filteredList = when (selectedTab) {
+                    1 -> list.filter { !it.isPaid }
+                    2 -> list.filter { it.isPaid }
+                    else -> list
+                }
 
-            // Fund selection dropdown
-            if (fundsList.isNotEmpty()) {
-                var fundDropdownExpanded by remember { mutableStateOf(false) }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp)
                 ) {
-                    Text(
-                        stringResource(R.string.destination_fund) + ":",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                    ExposedDropdownMenuBox(
-                        expanded = fundDropdownExpanded,
-                        onExpandedChange = { fundDropdownExpanded = !fundDropdownExpanded },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = currentFund?.let { "${it.code} - ${it.name}" } ?: stringResource(R.string.select_option),
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fundDropdownExpanded) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            textStyle = MaterialTheme.typography.bodyMedium,
-                            singleLine = true
-                        )
-                        ExposedDropdownMenu(
-                            expanded = fundDropdownExpanded,
-                            onDismissRequest = { fundDropdownExpanded = false }
+                    // 1. Month navigation and Action bar
+                    item(key = "header_month_and_actions") {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            fundsList.forEach { f ->
-                                DropdownMenuItem(
-                                    text = { Text("${f.code} - ${f.name}") },
-                                    onClick = {
-                                        vm.selectFund(f.id)
-                                        fundDropdownExpanded = false
-                                    }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { vm.prevMonth() }) {
+                                    Icon(Icons.Filled.ChevronLeft, contentDescription = stringResource(R.string.prev_month))
+                                }
+                                Text(
+                                    Format.monthLabel(context, ym.second, ym.first),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
                                 )
+                                IconButton(onClick = { vm.nextMonth() }) {
+                                    Icon(Icons.Filled.ChevronRight, contentDescription = stringResource(R.string.next_month))
+                                }
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilledTonalIconButton(onClick = { launchSpeech() }) {
+                                    Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.voice_input))
+                                }
+                                IconButton(onClick = {
+                                    val currentList = list
+                                    val fundTitle = currentFund?.let { "${it.code} ${it.name}" } ?: "সাধারণ তহবিল"
+                                    val monthLabel = Format.monthLabel(context, ym.second, ym.first)
+                                    SubscriptionPdfExporter.printMonthlyReport(
+                                        context = context,
+                                        mosque = mosqueInfo,
+                                        monthYearLabel = monthLabel,
+                                        fundName = fundTitle,
+                                        members = currentList
+                                    )
+                                }) {
+                                    Icon(Icons.Filled.Print, contentDescription = stringResource(R.string.print_pdf_report))
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            Spacer(Modifier.height(12.dp))
-
-            when (val s = state) {
-                is UiState.Loading -> com.saif.mosque.ui.components.CenteredProgress()
-                is UiState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
-                is UiState.Success -> {
-                    val list = s.data
-                    val totalMembers = list.size
-                    val totalTarget = list.sumOf { it.monthlyAmount }
-                    val totalCollected = list.sumOf { it.paidAmount }
-                    val totalPending = (totalTarget - totalCollected).coerceAtLeast(0.0)
-                    val paidCount = list.count { it.isPaid }
-                    val pendingCount = totalMembers - paidCount
-
-                    val filteredList = when (selectedTab) {
-                        1 -> list.filter { !it.isPaid }
-                        2 -> list.filter { it.isPaid }
-                        else -> list
+                    // 2. Fund selection dropdown
+                    if (fundsList.isNotEmpty()) {
+                        item(key = "header_fund_selector") {
+                            var fundDropdownExpanded by remember { mutableStateOf(false) }
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    stringResource(R.string.destination_fund) + ":",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                ExposedDropdownMenuBox(
+                                    expanded = fundDropdownExpanded,
+                                    onExpandedChange = { fundDropdownExpanded = !fundDropdownExpanded },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    OutlinedTextField(
+                                        value = currentFund?.let { "${it.code} - ${it.name}" } ?: stringResource(R.string.select_option),
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fundDropdownExpanded) },
+                                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                        textStyle = MaterialTheme.typography.bodyMedium,
+                                        singleLine = true
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = fundDropdownExpanded,
+                                        onDismissRequest = { fundDropdownExpanded = false }
+                                    ) {
+                                        fundsList.forEach { f ->
+                                            DropdownMenuItem(
+                                                text = { Text("${f.code} - ${f.name}") },
+                                                onClick = {
+                                                    vm.selectFund(f.id)
+                                                    fundDropdownExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // KPI Summary Cards
-                    com.saif.mosque.ui.components.StatsGrid(
-                        listOf(
-                            com.saif.mosque.ui.components.StatItem(
-                                stringResource(R.string.total_members),
-                                "$totalMembers জন"
-                            ),
-                            com.saif.mosque.ui.components.StatItem(
-                                stringResource(R.string.collected_amount),
-                                Format.money(totalCollected),
-                                MaterialTheme.colorScheme.primary
-                            ),
-                            com.saif.mosque.ui.components.StatItem(
-                                stringResource(R.string.pending_amount),
-                                Format.money(totalPending),
-                                if (totalPending > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                            ),
-                            com.saif.mosque.ui.components.StatItem(
-                                stringResource(R.string.collection_rate),
-                                if (totalTarget > 0) "${((totalCollected / totalTarget) * 100).toInt()}%" else "০%"
+                    // 3. KPI Summary Cards
+                    item(key = "header_kpi_summary") {
+                        com.saif.mosque.ui.components.StatsGrid(
+                            listOf(
+                                com.saif.mosque.ui.components.StatItem(
+                                    stringResource(R.string.total_members),
+                                    "$totalMembers জন"
+                                ),
+                                com.saif.mosque.ui.components.StatItem(
+                                    stringResource(R.string.collected_amount),
+                                    Format.money(totalCollected),
+                                    MaterialTheme.colorScheme.primary
+                                ),
+                                com.saif.mosque.ui.components.StatItem(
+                                    stringResource(R.string.pending_amount),
+                                    Format.money(totalPending),
+                                    if (totalPending > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                ),
+                                com.saif.mosque.ui.components.StatItem(
+                                    stringResource(R.string.collection_rate),
+                                    if (totalTarget > 0) "${((totalCollected / totalTarget) * 100).toInt()}%" else "০%"
+                                )
                             )
                         )
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // Filter Chips
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
-                            label = { Text("${stringResource(R.string.all)} ($totalMembers)") }
-                        )
-                        FilterChip(
-                            selected = selectedTab == 1,
-                            onClick = { selectedTab = 1 },
-                            label = { Text("${stringResource(R.string.pending_status)} ($pendingCount)") }
-                        )
-                        FilterChip(
-                            selected = selectedTab == 2,
-                            onClick = { selectedTab = 2 },
-                            label = { Text("${stringResource(R.string.collected_status)} ($paidCount)") }
-                        )
                     }
 
-                    Spacer(Modifier.height(8.dp))
-
-                    if (filteredList.isEmpty()) {
-                        EmptyBox()
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(bottom = 80.dp)
+                    // 4. Filter Chips
+                    item(key = "header_filter_chips") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(
-                                items = filteredList,
-                                key = { if (it.donor.id.isNotBlank()) it.donor.id else "${it.donor.name}_${it.donor.phone}_${it.donor.address}" }
-                            ) { item ->
-                                SubscriptionMemberCard(
-                                    status = item,
-                                    canCollect = vm.canCollect,
-                                    canEdit = vm.canEdit,
-                                    onCall = { phone ->
-                                        try {
-                                            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                                                data = Uri.parse("tel:$phone")
-                                            }
-                                            context.startActivity(dialIntent)
-                                        } catch (_: Exception) {
-                                            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.call_failed)) }
+                            FilterChip(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                label = { Text("${stringResource(R.string.all)} ($totalMembers)") }
+                            )
+                            FilterChip(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                label = { Text("${stringResource(R.string.pending_status)} ($pendingCount)") }
+                            )
+                            FilterChip(
+                                selected = selectedTab == 2,
+                                onClick = { selectedTab = 2 },
+                                label = { Text("${stringResource(R.string.collected_status)} ($paidCount)") }
+                            )
+                        }
+                    }
+
+                    // 5. Member cards
+                    if (filteredList.isEmpty()) {
+                        item(key = "empty_status_box") {
+                            EmptyBox()
+                        }
+                    } else {
+                        items(
+                            items = filteredList,
+                            key = { if (it.donor.id.isNotBlank()) it.donor.id else "${it.donor.name}_${it.donor.phone}_${it.donor.address}" }
+                        ) { item ->
+                            SubscriptionMemberCard(
+                                status = item,
+                                canCollect = vm.canCollect,
+                                canEdit = vm.canEdit,
+                                onCall = { phone ->
+                                    try {
+                                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                                            data = Uri.parse("tel:$phone")
                                         }
-                                    },
-                                    onSendReminder = { statusItem ->
-                                        val mLabel = Format.monthLabel(context, ym.second, ym.first)
-                                        val dueAmt = (statusItem.monthlyAmount - statusItem.paidAmount).coerceAtLeast(0.0)
-                                        val msg = ReceiptHelper.formatDuesReminderMessage(
-                                            mosqueName = mosqueInfo?.name ?: "",
-                                            memberName = statusItem.donor.name,
-                                            monthLabel = mLabel,
-                                            monthlyAmount = statusItem.monthlyAmount,
-                                            dueAmount = dueAmt
-                                        )
-                                        ReceiptHelper.sendViaWhatsApp(context, statusItem.donor.phone, msg)
-                                    },
-                                    onViewReceipt = if (item.isPaid) ({
-                                        val mLabel = Format.monthLabel(context, ym.second, ym.first)
-                                        activeReceiptData = ReceiptData(
-                                            mosqueName = mosqueInfo?.name ?: "",
-                                            mosqueAddress = mosqueInfo?.address ?: "",
-                                            receiptNo = item.lastReceiptNo ?: "",
-                                            donorName = item.donor.name,
-                                            donorPhone = item.donor.phone,
-                                            amount = item.paidAmount,
-                                            date = item.lastPaymentDate ?: Format.todayIso(),
-                                            fundName = currentFund?.let { "${it.code} - ${it.name}" } ?: "সাধারণ তহবিল",
-                                            purpose = "মাসিক বেতন/চাঁদা ($mLabel)",
-                                            receivedBy = user.name
-                                        )
-                                    }) else null,
-                                    onCollect = { collectingForMember = item },
-                                    onEdit = { editingMember = item.donor },
-                                    onDelete = { vm.deleteMember(item.donor) }
-                                )
-                            }
+                                        context.startActivity(dialIntent)
+                                    } catch (_: Exception) {
+                                        scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.call_failed)) }
+                                    }
+                                },
+                                onSendReminder = { statusItem ->
+                                    val mLabel = Format.monthLabel(context, ym.second, ym.first)
+                                    val dueAmt = (statusItem.monthlyAmount - statusItem.paidAmount).coerceAtLeast(0.0)
+                                    val msg = ReceiptHelper.formatDuesReminderMessage(
+                                        mosqueName = mosqueInfo?.name ?: "",
+                                        memberName = statusItem.donor.name,
+                                        monthLabel = mLabel,
+                                        monthlyAmount = statusItem.monthlyAmount,
+                                        dueAmount = dueAmt
+                                    )
+                                    ReceiptHelper.sendViaWhatsApp(context, statusItem.donor.phone, msg)
+                                },
+                                onViewReceipt = if (item.isPaid) ({
+                                    val mLabel = Format.monthLabel(context, ym.second, ym.first)
+                                    activeReceiptData = ReceiptData(
+                                        mosqueName = mosqueInfo?.name ?: "",
+                                        mosqueAddress = mosqueInfo?.address ?: "",
+                                        receiptNo = item.lastReceiptNo ?: "",
+                                        donorName = item.donor.name,
+                                        donorPhone = item.donor.phone,
+                                        amount = item.paidAmount,
+                                        date = item.lastPaymentDate ?: Format.todayIso(),
+                                        fundName = currentFund?.let { "${it.code} - ${it.name}" } ?: "সাধারণ তহবিল",
+                                        purpose = "মাসিক বেতন/চাঁদা ($mLabel)",
+                                        receivedBy = user.name
+                                    )
+                                }) else null,
+                                onCollect = { collectingForMember = item },
+                                onEdit = { editingMember = item.donor },
+                                onDelete = { vm.deleteMember(item.donor) }
+                            )
                         }
                     }
                 }

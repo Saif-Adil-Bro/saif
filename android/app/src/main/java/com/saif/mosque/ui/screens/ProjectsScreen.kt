@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -251,6 +252,7 @@ fun ProjectsScreen(container: AppContainer, user: AppUser) {
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             if (vm.canEdit) {
@@ -264,45 +266,52 @@ fun ProjectsScreen(container: AppContainer, user: AppUser) {
             }
         }
     ) { innerPadding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        when (val s = state) {
+            is UiState.Loading -> com.saif.mosque.ui.components.CenteredProgress()
+            is UiState.Error -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Column {
-                    Text("বিশেষ ইভেন্ট ও প্রজেক্ট ফান্ড", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("নির্মাণ, এসি, ইফতার ও ঈদ বোনাস ট্র্যাকার", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Text(s.message, color = MaterialTheme.colorScheme.error)
             }
-
-            Spacer(Modifier.height(12.dp))
-
-            when (val s = state) {
-                is UiState.Loading -> com.saif.mosque.ui.components.CenteredProgress()
-                is UiState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
-                is UiState.Success -> {
-                    val list = s.data
-                    if (list.isEmpty()) {
-                        EmptyBox("কোন বিশেষ প্রজেক্ট বা ইভেন্ট ফান্ড পাওয়া যায়নি। '+' বাটনে চেপে নতুন প্রজেক্ট তৈরি করুন।")
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(bottom = 80.dp)
+            is UiState.Success -> {
+                val list = s.data
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
+                ) {
+                    item(key = "projects_header") {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            items(list, key = { it.id }) { fund ->
-                                ProjectFundCard(
-                                    fund = fund,
-                                    canEdit = vm.canEdit,
-                                    onCollect = { collectingForFund = fund },
-                                    onEditBudget = { editingBudgetForFund = fund }
-                                )
+                            Column {
+                                Text("বিশেষ ইভেন্ট ও প্রজেক্ট ফান্ড", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Text("নির্মাণ, এসি, ইফতার ও ঈদ বোনাস ট্র্যাকার", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                        }
+                    }
+
+                    if (list.isEmpty()) {
+                        item(key = "empty_projects_box") {
+                            EmptyBox("কোন বিশেষ প্রজেক্ট বা ইভেন্ট ফান্ড পাওয়া যায়নি। '+' বাটনে চেপে নতুন প্রজেক্ট তৈরি করুন।")
+                        }
+                    } else {
+                        items(list, key = { it.id }) { fund ->
+                            ProjectFundCard(
+                                fund = fund,
+                                canEdit = vm.canEdit,
+                                onCollect = { collectingForFund = fund },
+                                onEditBudget = { editingBudgetForFund = fund }
+                            )
                         }
                     }
                 }
