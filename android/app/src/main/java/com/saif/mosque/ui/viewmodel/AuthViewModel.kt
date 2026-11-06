@@ -66,6 +66,8 @@ class AuthViewModel(
                     }
                     // A temporary Firebase outage is not the same as account revocation.
                     // Keep a matching cached session read-only and retry validation.
+                    var retryDelay = 2_000L
+                    var attempts = 0
                     while (true) {
                         val result = repo.refreshProfile()
                         if (result.isSuccess) {
@@ -84,15 +86,25 @@ class AuthViewModel(
                             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
                                 if (!isTemporaryFailure(e)) { repo.logout(); return@collectLatest }
                                 openCachedSession(fb.uid)
-                                delay(15_000)
+                                delay(retryDelay)
+                                retryDelay = (retryDelay * 2).coerceAtMost(8_000L)
                                 continue
                             }
                             return@collectLatest
                         }
                         val error = result.exceptionOrNull()
                         if (error != null && isTemporaryFailure(error)) {
+                            attempts++
+                            // When the device has mobile data/Wi-Fi connected, give Firestore
+                            // 2 quick retry attempts (1s, 2s) to establish its gRPC channel before
+                            // declaring offline mode.
+                            if (attempts <= 2) {
+                                delay(1_000L * attempts)
+                                continue
+                            }
                             openCachedSession(fb.uid)
-                            delay(15_000)
+                            delay(retryDelay)
+                            retryDelay = (retryDelay * 2).coerceAtMost(8_000L)
                         } else {
                             _state.value = AuthUiState.Guest
                             _messages.trySend(if (error is AuthException) Msg.Res(error.resId)
