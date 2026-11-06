@@ -275,6 +275,10 @@ test('archive receipts respect donor permissions and target state', async () => 
 test('ledger migration flag cannot be self-enabled and v2 directory entries require integer fields', async () => {
   const db = dbFor('admin-a');
   await assertFails(updateDoc(doc(db, 'mosques/a'), {ledgerVersion:2, totalBalancePoisha:10000}));
+  await assertFails(updateDoc(doc(db, 'mosques/a'), {ledgerVersion:2, totalBalancePoisha:999, ledgerInitOp:'v2-init'}));
+  await assertSucceeds(updateDoc(doc(db, 'mosques/a/funds/general'), {balancePoisha:0}));
+  await assertSucceeds(updateDoc(doc(db, 'mosques/a'), {ledgerVersion:2, totalBalancePoisha:0, ledgerInitOp:'v2-init'}));
+  await assertFails(updateDoc(doc(db, 'mosques/a'), {ledgerVersion:2, totalBalancePoisha:0, ledgerInitOp:'v2-init'}));
   await env.withSecurityRulesDisabled(async ctx => {
     await updateDoc(doc(ctx.firestore(), 'mosques/a'), {ledgerVersion:2, totalBalancePoisha:10000});
   });

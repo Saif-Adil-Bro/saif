@@ -52,6 +52,7 @@ import com.saif.mosque.ui.components.ConfirmDialog
 import com.saif.mosque.ui.components.SectionTitle
 import com.saif.mosque.ui.navigation.Screen
 import com.saif.mosque.ui.viewmodel.AuthViewModel
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 @Composable
@@ -103,7 +104,9 @@ fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthView
 
 @Composable
 private fun AuditTrailDialog(container: AppContainer, mosqueId: String, onDismiss: () -> Unit) {
-    val mutationsFlow = remember(mosqueId) { container.ledgerRepository.observeLedgerMutations(mosqueId) }
+    val mutationsFlow = remember(mosqueId) {
+        container.ledgerRepository.observeLedgerMutations(mosqueId).catch { emit(emptyList()) }
+    }
     val mutations by mutationsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     var verification by remember { mutableStateOf<com.saif.mosque.data.model.ReceiptChainVerification?>(null) }
     var verifying by remember { mutableStateOf(false) }

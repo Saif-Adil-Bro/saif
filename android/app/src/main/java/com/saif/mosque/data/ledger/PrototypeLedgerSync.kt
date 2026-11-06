@@ -42,12 +42,50 @@ object PrototypeLedgerSync {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "prototype-ledger-recovery", ExistingPeriodicWorkPolicy.KEEP, request)
     }
+    suspend fun ensureMosqueV2Initialized(db: com.google.firebase.firestore.FirebaseFirestore, mosqueId: String) {
+        val parentRef = db.collection("mosques").document(mosqueId)
+        val mosqueSnap = parentRef.get(Source.SERVER).await()
+        if (!mosqueSnap.exists() || mosqueSnap.metadata.hasPendingWrites() || mosqueSnap.getBoolean("active") != true) return
+        if (mosqueSnap.getLong("ledgerVersion") == 2L) return
+
+        val fundsSnap = parentRef.collection("funds").get(Source.SERVER).await()
+        for (f in fundsSnap.documents) {
+            if (!f.contains("balancePoisha")) {
+                val balance = (f.get("balance") as? Number)?.toDouble() ?: 0.0
+                val poisha = LedgerMath.poisha(balance, positive = false)
+                f.reference.update("balancePoisha", poisha).await()
+            }
+        }
+        val donorsSnap = parentRef.collection("donors").get(Source.SERVER).await()
+        for (d in donorsSnap.documents) {
+            if (!d.contains("totalDonatedPoisha")) {
+                val donated = (d.get("totalDonated") as? Number)?.toDouble() ?: 0.0
+                val poisha = LedgerMath.poisha(donated, positive = false)
+                d.reference.update("totalDonatedPoisha", poisha).await()
+            }
+        }
+        val totalBalance = (mosqueSnap.get("totalBalance") as? Number)?.toDouble() ?: 0.0
+        val totalPoisha = LedgerMath.poisha(totalBalance, positive = false)
+        parentRef.update(mapOf(
+            "ledgerVersion" to 2L,
+            "totalBalancePoisha" to totalPoisha,
+            "ledgerInitOp" to "v2-init"
+        )).await()
+    }
+
     suspend fun recoverScope(context: Context, uid: String, mosqueId: String) {
         val app = context.applicationContext as MosqueApp
         if (app.container.auth.currentUser?.uid != uid) return
         val store = PrototypeLedgerOutbox.get(context)
         val waiting = store.list(uid, mosqueId).filter { it.state == "BLOCKED" && it.failure == "WAIT_MIGRATION" }
         if (waiting.isNotEmpty()) {
+            try {
+                ensureMosqueV2Initialized(app.container.db, mosqueId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // If initialization fails due to permissions or network, proceed to check state
+            }
             // Only a confirmed, active v2 tenant releases migration-waiting drafts.
             // Missing/inconsistent per-account fields remain blocked for investigation.
             val snap = app.container.db.collection("mosques").document(mosqueId).get(Source.SERVER).await()
@@ -116,6 +154,15 @@ class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : Corout
             if (!profile.exists() || profile.metadata.hasPendingWrites() || profile.getBoolean("active") != true || !allowed)
                 throw LedgerPermissionDenied()
             if (container.auth.currentUser?.uid != uid) return Result.success()
+            if (role in setOf("SUPERADMIN", "ADMIN", "SECRETARY", "TREASURER")) {
+                try {
+                    ensureMosqueV2Initialized(container.db, mosqueId)
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (_: Exception) {
+                    // Let writer.commit evaluate or throw appropriate ledger exception
+                }
+            }
             PrototypeLedgerWriter(container.db) { container.auth.currentUser?.uid }.commit(row.draft)
         } catch (cancel: CancellationException) { throw cancel } catch (e: Exception) {
             if (container.auth.currentUser?.uid != uid || e is LedgerIdentityChanged) return Result.success()

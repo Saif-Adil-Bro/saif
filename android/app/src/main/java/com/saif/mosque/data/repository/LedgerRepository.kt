@@ -13,6 +13,7 @@ import com.saif.mosque.data.model.Fund
 import com.saif.mosque.data.model.Mosque
 import com.saif.mosque.data.model.Transfer
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.takeWhile
@@ -85,6 +86,7 @@ class LedgerRepository(
     fun observeLedgerMutations(mosqueId: String): Flow<List<com.saif.mosque.data.model.LedgerMutation>> =
         coll(mosqueId, "ledgerMutations").snapshotsFlow()
             .map { it.toObjects(com.saif.mosque.data.model.LedgerMutation::class.java) }
+            .catch { emit(emptyList()) }
 
     fun observeRecentContributions(mosqueId: String): Flow<List<Contribution>> =
         coll(mosqueId, "contributions").orderBy("date", Query.Direction.DESCENDING).recentVisible(Contribution::class.java)
@@ -349,13 +351,19 @@ class LedgerRepository(
         val contribsSnap = coll(mosqueId, "contributions").get().await()
         val expensesSnap = coll(mosqueId, "expenses").get().await()
         val transfersSnap = coll(mosqueId, "transfers").get().await()
-        val mutationsSnap = coll(mosqueId, "ledgerMutations").get().await()
+        val mutationsDocs = try {
+            coll(mosqueId, "ledgerMutations").get().await().documents
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
 
         val issues = mutableListOf<String>()
-        val mutationMap = mutationsSnap.documents.associateBy { it.id }
+        val mutationMap = mutationsDocs.associateBy { it.id }
         val prevIdsByTarget = mutableMapOf<String, MutableSet<String>>()
 
-        for (doc in mutationsSnap.documents) {
+        for (doc in mutationsDocs) {
             val kind = doc.getString("kind") ?: ""
             val targetId = doc.getString("targetId") ?: ""
             val before = doc.get("before") as? Map<*, *>
@@ -402,7 +410,7 @@ class LedgerRepository(
 
         return com.saif.mosque.data.model.ReceiptChainVerification(
             valid = issues.isEmpty(),
-            mutationsCount = mutationsSnap.size(),
+            mutationsCount = mutationsDocs.size,
             activeEntriesCount = activeEntries,
             voidedEntriesCount = voidedEntries,
             totalBalancePoisha = mosqueTotalPoisha,

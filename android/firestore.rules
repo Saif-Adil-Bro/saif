@@ -447,6 +447,39 @@ service cloud.firestore {
         u.role == 'ADMIN' && u.active == true && u.createdAt is int &&
         !exists(mosque) && existsAfter(mosque) && getAfter(mosque).data.firstAdminUid == uid;
     }
+    function fundV2Init(mosqueId) {
+      let old = resource.data;
+      let next = request.resource.data;
+      return canDirectory(mosqueId, 'funds') &&
+        get(mosquePath(mosqueId)).data.get('ledgerVersion', 0) != 2 &&
+        get(mosquePath(mosqueId)).data.get('ledgerMigration', '') != 'frozen' &&
+        old.mosqueId == mosqueId &&
+        !old.keys().hasAny(['balancePoisha']) &&
+        next.diff(old).affectedKeys().hasOnly(['balancePoisha']) &&
+        money(next.balancePoisha, old.balance);
+    }
+    function donorV2Init(mosqueId) {
+      let old = resource.data;
+      let next = request.resource.data;
+      return canDirectory(mosqueId, 'donors') &&
+        get(mosquePath(mosqueId)).data.get('ledgerVersion', 0) != 2 &&
+        get(mosquePath(mosqueId)).data.get('ledgerMigration', '') != 'frozen' &&
+        old.mosqueId == mosqueId &&
+        !old.keys().hasAny(['totalDonatedPoisha']) &&
+        next.diff(old).affectedKeys().hasOnly(['totalDonatedPoisha']) &&
+        money(next.totalDonatedPoisha, old.totalDonated);
+    }
+    function mosqueV2Init(mosqueId) {
+      let old = resource.data;
+      let next = request.resource.data;
+      return canDirectory(mosqueId, 'funds') &&
+        old.get('ledgerVersion', 0) != 2 &&
+        old.get('ledgerMigration', '') != 'frozen' &&
+        next.diff(old).affectedKeys().hasOnly(['ledgerVersion', 'totalBalancePoisha', 'ledgerInitOp']) &&
+        next.ledgerVersion == 2 &&
+        next.ledgerInitOp == 'v2-init' &&
+        money(next.totalBalancePoisha, old.totalBalance);
+    }
     match /users/{uid} {
       // Self-read permits login to report an inactive profile; tenant queries must
       // constrain mosqueId and cannot read profiles from a different tenant.
@@ -460,8 +493,10 @@ service cloud.firestore {
       allow read: if platform() || sameTenant(mosqueId);
       allow create: if mosqueCreate(mosqueId);
       allow delete: if false;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind'])
-        ? (request.resource.data.ledgerOpKind == 'ledgerMutations' ? mutationMosqueUpdate(mosqueId) : mosqueUpdate(mosqueId))
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind','ledgerInitOp'])
+        ? (request.resource.data.diff(resource.data).affectedKeys().hasAny(['ledgerInitOp'])
+            ? mosqueV2Init(mosqueId)
+            : (request.resource.data.ledgerOpKind == 'ledgerMutations' ? mutationMosqueUpdate(mosqueId) : mosqueUpdate(mosqueId)))
         : ((request.resource.data.diff(resource.data).affectedKeys().hasAny(['memberCount','memberOpId']) && memberCounterInvite(mosqueId))
         || (platform() && resource.data.get('ledgerMigration', '') != 'frozen'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -498,9 +533,10 @@ service cloud.firestore {
           || (collection == 'ledgerMutations' && mutationCreate(mosqueId, doc));
         allow update: if (collection in ['funds', 'donors'] &&
           (request.resource.data.diff(resource.data).affectedKeys().hasAny(['balance','balancePoisha','totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind'])
-            ? (request.resource.data.ledgerOpKind == 'ledgerMutations'
+            ? ((collection == 'funds' && fundV2Init(mosqueId)) || (collection == 'donors' && donorV2Init(mosqueId)) ||
+               (request.resource.data.ledgerOpKind == 'ledgerMutations'
                 ? (collection == 'funds' ? mutationFundUpdate(mosqueId, doc) : mutationDonorUpdate(mosqueId, doc))
-                : (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc)))
+                : (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc))))
             : directoryUpdate(mosqueId, collection, doc)))
           || (collection in ['contributions','expenses','transfers'] && mutationRecordChange(mosqueId, collection, doc));
         allow delete: if false;
