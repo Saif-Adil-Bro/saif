@@ -52,6 +52,8 @@ import com.saif.mosque.R
 import com.saif.mosque.data.model.AppUser
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.ConfirmDialog
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.SectionTitle
 import com.saif.mosque.ui.navigation.Screen
 import com.saif.mosque.ui.viewmodel.AuthViewModel
@@ -147,6 +149,8 @@ private fun AuditTrailDialog(container: AppContainer, mosqueId: String, onDismis
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(R.string.audit_trail_title)) },
         text = {
             Column(

@@ -53,6 +53,8 @@ import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.ConfirmDialog
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.MoneyText
 import com.saif.mosque.ui.components.StateBox
@@ -247,9 +249,11 @@ private fun DonorFormDialog(
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(if (isNew) R.string.add_donor else R.string.edit_donor)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LabeledField(
                     stringResource(R.string.name), name, { name = it },
                     error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null,

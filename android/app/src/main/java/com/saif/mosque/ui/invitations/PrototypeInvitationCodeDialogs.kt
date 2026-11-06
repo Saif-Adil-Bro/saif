@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import com.saif.mosque.R
 import com.saif.mosque.data.invitations.InvitationAddress
 import com.saif.mosque.data.invitations.InvitationCode
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 
 /** Experimental handoff UI; no live route or production invitation is enabled. */
@@ -33,10 +35,11 @@ internal fun PrototypeInvitationCodeDialog(busy: Boolean, error: String?, onDism
     val parsed = if (attempted) InvitationCode.decode(code) else null
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        modifier = Modifier.imePadding(),
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8).imePadding(),
         title = { Text(stringResource(R.string.invitation_join_title)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.invitation_code_help), style = MaterialTheme.typography.bodySmall)
                 LabeledField(stringResource(R.string.invitation_code), code, { code = it; attempted = false },
                     error = if (attempted && parsed == null) stringResource(R.string.invitation_code_invalid) else null,
@@ -58,10 +61,13 @@ internal fun PrototypeInvitationCodeDialog(busy: Boolean, error: String?, onDism
 @Composable
 internal fun PrototypeInvitationShareDialog(address: InvitationAddress, onCopy: (String) -> Unit, onDismiss: () -> Unit) {
     val code = InvitationCode.encode(address)
-    AlertDialog(onDismissRequest = onDismiss,
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(R.string.invitation_share_title)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.invitation_share_help), style = MaterialTheme.typography.bodySmall)
                 SelectionContainer { Text(code, Modifier.padding(vertical = 4.dp), style = MaterialTheme.typography.bodyMedium) }
             }

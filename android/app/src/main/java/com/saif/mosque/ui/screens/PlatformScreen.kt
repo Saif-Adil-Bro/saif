@@ -71,6 +71,8 @@ import com.saif.mosque.data.repository.DemoMosqueProtectedException
 import com.saif.mosque.data.repository.PlatformRepository
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.ConfirmDialog
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.SectionTitle
 import com.saif.mosque.ui.components.StatCard
@@ -384,9 +386,11 @@ private fun MosqueFormDialog(
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(if (isNew) R.string.new_mosque else R.string.edit_mosque)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LabeledField(
                     stringResource(R.string.mosque_name), name, { name = it },
                     error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null,
@@ -499,9 +503,11 @@ private fun CredentialsDialog(created: CreatedMosque, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(R.string.credentials_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.credentials_warning),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)

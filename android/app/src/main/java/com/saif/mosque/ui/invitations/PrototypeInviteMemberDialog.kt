@@ -23,6 +23,8 @@ import com.saif.mosque.R
 import com.saif.mosque.data.invitations.PrototypeInvitation
 import com.saif.mosque.data.model.Role
 import com.saif.mosque.ui.components.DropdownField
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.screens.roleLabel
 import com.saif.mosque.util.Validators
@@ -51,10 +53,13 @@ internal fun PrototypeInviteMemberDialog(
     val tooLong = stringResource(R.string.invitation_field_too_long)
     val role = allowedRoles.firstOrNull { it.name == roleName } ?: Role.MEMBER
     val options = allowedRoles.map { it to roleLabel(it) }
-    AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, modifier = Modifier.imePadding(),
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8).imePadding(),
         title = { Text(stringResource(R.string.invitation_member_title)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.invitation_member_help), style = MaterialTheme.typography.bodySmall)
                 LabeledField(stringResource(R.string.name), name, { name = it }, enabled = !saving,
                     error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null)

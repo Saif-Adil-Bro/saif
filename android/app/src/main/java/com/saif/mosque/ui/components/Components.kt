@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -316,6 +317,11 @@ fun DatePickerField(
 
 // ---------- dialogs ----------
 
+val FullWidthDialogProperties = DialogProperties(usePlatformDefaultWidth = false)
+
+fun Modifier.fullWidthDialog(horizontalPadding: Int = 8): Modifier =
+    this.fillMaxWidth().padding(horizontal = horizontalPadding.dp)
+
 @Composable
 fun ConfirmDialog(
     title: String,
@@ -327,6 +333,8 @@ fun ConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(16),
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
@@ -344,6 +352,8 @@ fun ConfirmDialog(
 fun InfoDialog(title: String, message: String, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(16),
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {

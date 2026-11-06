@@ -104,6 +104,8 @@ fun FridayCashCounterDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

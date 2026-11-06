@@ -86,6 +86,8 @@ fun FridayAnnouncementDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

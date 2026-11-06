@@ -28,6 +28,8 @@ import com.saif.mosque.data.invitations.InvitationCode
 import com.saif.mosque.data.invitations.PrototypeJoinCoordinator
 import com.saif.mosque.data.invitations.PrototypeJoinMessage
 import com.saif.mosque.data.invitations.PrototypeJoinPhase
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.PasswordField
 import com.saif.mosque.util.Validators
@@ -60,10 +62,13 @@ internal fun PrototypeJoinFlow(coordinator: PrototypeJoinCoordinator, onClose: (
         }
         return
     }
-    AlertDialog(onDismissRequest = { if (!state.busy) onClose() }, modifier = Modifier.imePadding(),
+    AlertDialog(
+        onDismissRequest = { if (!state.busy) onClose() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8).imePadding(),
         title = { Text(stringResource(R.string.invitation_join_title)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (state.phase) {
                     PrototypeJoinPhase.ACCOUNT -> {
                         Text(stringResource(R.string.join_account_help), style = MaterialTheme.typography.bodySmall)

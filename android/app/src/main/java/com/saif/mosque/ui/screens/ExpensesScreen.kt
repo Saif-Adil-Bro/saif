@@ -59,6 +59,8 @@ import com.saif.mosque.ui.components.ConfirmDialog
 import com.saif.mosque.ui.components.DatePickerField
 import com.saif.mosque.ui.components.DropdownField
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.MoneyText
 import com.saif.mosque.ui.components.StateBox
@@ -268,9 +270,11 @@ internal fun ExpenseFormDialog(
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(if (isNew) R.string.add_expense else R.string.edit_expense)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LabeledField(
                     stringResource(R.string.expense_title), title, { title = it },
                     error = if (attempted) Validators.required(title) ?: tooLong.takeIf { title.trim().length > 1000 } else null,

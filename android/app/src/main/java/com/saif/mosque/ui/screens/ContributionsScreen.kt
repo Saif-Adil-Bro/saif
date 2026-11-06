@@ -65,6 +65,8 @@ import com.saif.mosque.ui.components.ConfirmDialog
 import com.saif.mosque.ui.components.DatePickerField
 import com.saif.mosque.ui.components.DropdownField
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.FridayCashCounterDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.MoneyText
@@ -367,9 +369,11 @@ internal fun ContributionFormDialog(
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(if (isNew) R.string.add_contribution else R.string.edit_contribution)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 DropdownField(
                     label = stringResource(R.string.donor),
                     options = donorOptions,

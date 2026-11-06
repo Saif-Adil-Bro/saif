@@ -105,6 +105,8 @@ import com.saif.mosque.data.outbox.DirectorySync
 import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.MoneyText
 import com.saif.mosque.ui.components.ReceiptSlipDialog
@@ -1236,6 +1238,8 @@ private fun AddOrEditMemberDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = {
             Text(
                 if (initialDonor == null) stringResource(R.string.add_subscription_member)
@@ -1386,6 +1390,8 @@ private fun CollectDuesDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(R.string.collect_for_month, monthLabel)) },
         text = {
             Column(
@@ -1484,6 +1490,8 @@ private fun VoiceReviewDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = {
             Column {
                 Text(stringResource(R.string.voice_results_title), fontWeight = FontWeight.Bold)

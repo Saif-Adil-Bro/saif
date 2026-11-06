@@ -57,6 +57,8 @@ import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.ConfirmDialog
 import com.saif.mosque.ui.components.DropdownField
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.LabeledField
 import com.saif.mosque.ui.components.PasswordField
 import com.saif.mosque.ui.components.StateBox
@@ -441,9 +443,11 @@ internal fun MemberFormDialog(
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text(stringResource(if (isNew) R.string.add_member else R.string.edit_member)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LabeledField(stringResource(R.string.name), name, { name = it },
                     error = if (attempted) Validators.required(name) ?: tooLong.takeIf { name.trim().length > 1000 } else null, enabled = !saving)
                 LabeledField(stringResource(R.string.email), email, { email = it },

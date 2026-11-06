@@ -77,6 +77,8 @@ import com.saif.mosque.data.outbox.DirectorySync
 import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.ReceiptSlipDialog
 import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
@@ -515,6 +517,8 @@ private fun AddProjectDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text("নতুন প্রজেক্ট বা ড্রাইভ তৈরি") },
         text = {
             Column(
@@ -600,6 +604,8 @@ private fun EditProjectBudgetDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text("প্রজেক্ট বাজেট নির্ধারণ") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -649,6 +655,8 @@ private fun CollectProjectDonationDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text("${fund.name}-এ অনুদান গ্রহণ") },
         text = {
             Column(

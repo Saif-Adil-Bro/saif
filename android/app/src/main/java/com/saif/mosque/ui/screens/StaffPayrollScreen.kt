@@ -82,6 +82,8 @@ import com.saif.mosque.data.model.withSalaryAmount
 import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.di.AppContainer
 import com.saif.mosque.ui.components.EmptyBox
+import com.saif.mosque.ui.components.FullWidthDialogProperties
+import com.saif.mosque.ui.components.fullWidthDialog
 import com.saif.mosque.ui.components.ReceiptSlipDialog
 import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
@@ -598,6 +600,8 @@ private fun PaySalaryDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = {
             Text("বেতন পরিশোধ: ${staff.name}", fontWeight = FontWeight.Bold)
         },
@@ -754,6 +758,8 @@ private fun EditStaffSalaryDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
         title = { Text("মাসিক সম্মানী/বেতন নির্ধারণ") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
