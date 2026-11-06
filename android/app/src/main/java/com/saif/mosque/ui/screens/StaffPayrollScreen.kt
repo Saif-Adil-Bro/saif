@@ -175,6 +175,7 @@ class StaffPayrollViewModel(
     }
 
     fun paySalary(
+        context: android.content.Context,
         staff: AppUser,
         netPayable: Double,
         fundId: String,
@@ -185,7 +186,7 @@ class StaffPayrollViewModel(
     ) = viewModelScope.launch {
         try {
             val (y, m) = _yearMonth.value
-            val monthLabel = Format.monthLabel(null, m, y)
+            val monthLabel = Format.monthLabel(context, m, y)
             val cleanName = staff.name.trim()
 
             val draft = PrototypeLedgerDraft(
@@ -375,6 +376,7 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
             onDismiss = { payingStaff = null },
             onConfirm = { netPayable, fundId, date, voucherNo, note ->
                 vm.paySalary(
+                    context = context,
                     staff = target.user,
                     netPayable = netPayable,
                     fundId = fundId,
