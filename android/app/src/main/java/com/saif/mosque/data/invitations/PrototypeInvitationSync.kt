@@ -95,7 +95,11 @@ class PrototypeInvitationWorker(context: Context, params: WorkerParameters) : Co
         if (row == null || row.state != "PENDING" || container.auth.currentUser?.uid != uid) return Result.success()
         val status = try {
             // Server-only preflight: do not rely on a cached role or unvalidated network.
-            val profile = container.db.collection("users").document(uid).get(Source.SERVER).await()
+            var profile = container.db.collection("users").document(uid).get(Source.SERVER).await()
+            if (profile.metadata.hasPendingWrites()) {
+                container.db.waitForPendingWrites().await()
+                profile = container.db.collection("users").document(uid).get(Source.SERVER).await()
+            }
             if (container.auth.currentUser?.uid != uid) return Result.success()
             if (profile.metadata.hasPendingWrites()) return Result.retry()
             val role = profile.getString("role")
@@ -106,7 +110,11 @@ class PrototypeInvitationWorker(context: Context, params: WorkerParameters) : Co
                 store.transition(id, uid, mosqueId, "PENDING", "BLOCKED", "PERMISSION")
                 return Result.success()
             }
-            val mosque = container.db.collection("mosques").document(mosqueId).get(Source.SERVER).await()
+            var mosque = container.db.collection("mosques").document(mosqueId).get(Source.SERVER).await()
+            if (mosque.metadata.hasPendingWrites()) {
+                container.db.waitForPendingWrites().await()
+                mosque = container.db.collection("mosques").document(mosqueId).get(Source.SERVER).await()
+            }
             if (container.auth.currentUser?.uid != uid) return Result.success()
             if (mosque.metadata.hasPendingWrites()) return Result.retry()
             if (!mosque.exists() || mosque.getBoolean("active") != true) {
