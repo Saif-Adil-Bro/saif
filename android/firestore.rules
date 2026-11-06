@@ -496,7 +496,7 @@ service cloud.firestore {
       allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalBalance','totalBalancePoisha','ledgerOpId','ledgerOpKind','ledgerInitOp'])
         ? (request.resource.data.diff(resource.data).affectedKeys().hasAny(['ledgerInitOp'])
             ? mosqueV2Init(mosqueId)
-            : (request.resource.data.ledgerOpKind == 'ledgerMutations' ? mutationMosqueUpdate(mosqueId) : mosqueUpdate(mosqueId)))
+            : (request.resource.data.get('ledgerOpKind', '') == 'ledgerMutations' ? mutationMosqueUpdate(mosqueId) : mosqueUpdate(mosqueId)))
         : ((request.resource.data.diff(resource.data).affectedKeys().hasAny(['memberCount','memberOpId']) && memberCounterInvite(mosqueId))
         || (platform() && resource.data.get('ledgerMigration', '') != 'frozen'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -534,7 +534,7 @@ service cloud.firestore {
         allow update: if (collection in ['funds', 'donors'] &&
           (request.resource.data.diff(resource.data).affectedKeys().hasAny(['balance','balancePoisha','totalDonated','totalDonatedPoisha','ledgerOpId','ledgerOpKind'])
             ? ((collection == 'funds' && fundV2Init(mosqueId)) || (collection == 'donors' && donorV2Init(mosqueId)) ||
-               (request.resource.data.ledgerOpKind == 'ledgerMutations'
+               (request.resource.data.get('ledgerOpKind', '') == 'ledgerMutations'
                 ? (collection == 'funds' ? mutationFundUpdate(mosqueId, doc) : mutationDonorUpdate(mosqueId, doc))
                 : (collection == 'funds' ? fundUpdate(mosqueId, doc) : donorUpdate(mosqueId, doc))))
             : directoryUpdate(mosqueId, collection, doc)))

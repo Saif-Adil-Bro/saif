@@ -156,7 +156,7 @@ class PrototypeLedgerWorker(context: Context, params: WorkerParameters) : Corout
             if (container.auth.currentUser?.uid != uid) return Result.success()
             if (role in setOf("SUPERADMIN", "ADMIN", "SECRETARY", "TREASURER")) {
                 try {
-                    ensureMosqueV2Initialized(container.db, mosqueId)
+                    PrototypeLedgerSync.ensureMosqueV2Initialized(container.db, mosqueId)
                 } catch (c: CancellationException) {
                     throw c
                 } catch (_: Exception) {
