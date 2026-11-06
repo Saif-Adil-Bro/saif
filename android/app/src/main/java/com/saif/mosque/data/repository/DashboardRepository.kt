@@ -37,6 +37,7 @@ class DashboardRepository(
 
     private fun observeDashboardMonth(mosqueId: String, year: Int, month: Int): Flow<DashboardData> {
         val (start, end) = Format.yearMonthIso(year, month)
+        val (weekStart, weekEnd) = Format.last7DaysIso()
 
         return combine(
             listOf(
@@ -47,7 +48,9 @@ class DashboardRepository(
                 ledger.observeRecentTransfers(mosqueId),
                 ledger.observeMosque(mosqueId),
                 ledger.observeRecentContributions(mosqueId),
-                ledger.observeRecentExpenses(mosqueId)
+                ledger.observeRecentExpenses(mosqueId),
+                ledger.observeMonthContributions(mosqueId, weekStart, weekEnd),
+                ledger.observeMonthExpenses(mosqueId, weekStart, weekEnd)
             )
         ) { arr ->
             @Suppress("UNCHECKED_CAST")
@@ -65,6 +68,10 @@ class DashboardRepository(
             val recentContributions = arr[6] as List<Contribution>
             @Suppress("UNCHECKED_CAST")
             val recentExpenses = arr[7] as List<Expense>
+            @Suppress("UNCHECKED_CAST")
+            val weeklyContributions = arr[8] as List<Contribution>
+            @Suppress("UNCHECKED_CAST")
+            val weeklyExpenses = arr[9] as List<Expense>
 
             val recent = (
                 recentContributions.map {
@@ -76,10 +83,17 @@ class DashboardRepository(
                 }
                 ).sortedWith(compareByDescending<RecentTx> { it.date }.thenByDescending { it.createdAt }).take(10)
 
+            val weeklyIncome = weeklyContributions.sumOf { Math.round(it.amount * 100) } / 100.0
+            val weeklyExpense = weeklyExpenses.sumOf { Math.round(it.amount * 100) } / 100.0
+
             DashboardData(
                 totalBalance = mosque?.totalBalance ?: (funds.sumOf { Math.round(it.balance * 100) } / 100.0),
                 monthlyIncome = contributions.sumOf { Math.round(it.amount * 100) } / 100.0,
                 monthlyExpense = expenses.sumOf { Math.round(it.amount * 100) } / 100.0,
+                weeklyIncome = weeklyIncome,
+                weeklyExpense = weeklyExpense,
+                weeklyStartDate = weekStart,
+                weeklyEndDate = weekEnd,
                 activeDonors = donors.count { it.active },
                 fundCount = funds.count { it.active },
                 fundBalances = funds.sortedByDescending { it.balance }.map { it to it.balance },

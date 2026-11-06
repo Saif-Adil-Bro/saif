@@ -60,6 +60,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
+data class WeeklyReportSummary(
+    val startDate: String = "",
+    val endDate: String = "",
+    val income: Double = 0.0,
+    val expense: Double = 0.0
+)
+
 class ReportsViewModel(
     private val repo: LedgerRepository,
     private val mosqueId: String
@@ -67,6 +74,9 @@ class ReportsViewModel(
     private val _state = MutableStateFlow<UiState<MonthlyReport>>(UiState.Loading)
     val state: StateFlow<UiState<MonthlyReport>> =
         _state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
+
+    private val _weekly = MutableStateFlow(WeeklyReportSummary())
+    val weekly: StateFlow<WeeklyReportSummary> = _weekly
 
     private val _yearMonth = MutableStateFlow(Format.currentYearMonth())
     val yearMonth: StateFlow<Pair<Int, Int>> = _yearMonth
@@ -86,6 +96,19 @@ class ReportsViewModel(
                 val byFund = contributions.groupBy { it.accountId }
                     .map { (acc, list) -> acc to (list.sumOf { Math.round(it.amount * 100) } / 100.0) }
                     .sortedByDescending { it.second }
+
+                val (wStart, wEnd) = Format.last7DaysIso()
+                val weekContributions = repo.contributionsInRange(mosqueId, wStart, wEnd)
+                val weekExpenses = repo.expensesInRange(mosqueId, wStart, wEnd)
+                val weekIncome = weekContributions.sumOf { Math.round(it.amount * 100) } / 100.0
+                val weekExpense = weekExpenses.sumOf { Math.round(it.amount * 100) } / 100.0
+                _weekly.value = WeeklyReportSummary(
+                    startDate = wStart,
+                    endDate = wEnd,
+                    income = weekIncome,
+                    expense = weekExpense
+                )
+
                 _state.value = UiState.Success(MonthlyReport(
                     year = y, month = m,
                     income = contributions.sumOf { Math.round(it.amount * 100) } / 100.0,
@@ -122,6 +145,7 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
     val context = LocalContext.current
     val state by vm.state.collectAsStateWithLifecycle()
     val ym by vm.yearMonth.collectAsStateWithLifecycle()
+    val weeklyData by vm.weekly.collectAsStateWithLifecycle()
 
     // fund labels for the by-fund section
     val fundsFlow = remember(mosqueId) {
@@ -215,15 +239,14 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
     }
 
     if (showFridayAnnouncement) {
-        val rep = (state as? UiState.Success)?.data
-        val inc = rep?.income ?: 0.0
-        val exp = rep?.expense ?: 0.0
         val fundBals = fundsState.map { it to it.balance }
         val totBal = fundBals.sumOf { it.second }
         FridayAnnouncementDialog(
             mosqueName = mosqueInfo?.name ?: "",
-            lastWeekIncome = inc / 4.0,
-            lastWeekExpense = exp / 4.0,
+            startDate = weeklyData.startDate,
+            endDate = weeklyData.endDate,
+            lastWeekIncome = weeklyData.income,
+            lastWeekExpense = weeklyData.expense,
             totalBalance = totBal,
             fundBalances = fundBals,
             onDismiss = { showFridayAnnouncement = false }

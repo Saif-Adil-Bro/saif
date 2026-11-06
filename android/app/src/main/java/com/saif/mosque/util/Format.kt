@@ -73,4 +73,16 @@ object Format {
         return start.format(DateTimeFormatter.ISO_LOCAL_DATE) to
             end.format(DateTimeFormatter.ISO_LOCAL_DATE)
     }
+
+    /** Last 7 days ISO date range as Pair(startDate, endDate) inclusive. */
+    fun last7DaysIso(): Pair<String, String> {
+        val today = LocalDate.now()
+        val start = today.minusDays(6)
+        return start.format(DateTimeFormatter.ISO_LOCAL_DATE) to
+            today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+    }
+
+    /** Formats date range in Bengali: "dd/MM/yyyy হতে dd/MM/yyyy পর্যন্ত" */
+    fun dateRangeBengali(startIso: String, endIso: String): String =
+        "${date(startIso)} হতে ${date(endIso)} পর্যন্ত"
 }

@@ -283,8 +283,10 @@ fun DashboardScreen(container: AppContainer, user: AppUser) {
         if (showAnnouncement) {
             FridayAnnouncementDialog(
                 mosqueName = mosqueInfo?.name ?: "",
-                lastWeekIncome = data.monthlyIncome / 4.0, // Best estimated 7 days from recent income
-                lastWeekExpense = data.monthlyExpense / 4.0,
+                startDate = data.weeklyStartDate,
+                endDate = data.weeklyEndDate,
+                lastWeekIncome = data.weeklyIncome,
+                lastWeekExpense = data.weeklyExpense,
                 totalBalance = data.totalBalance,
                 fundBalances = data.fundBalances,
                 onDismiss = { showAnnouncement = false }

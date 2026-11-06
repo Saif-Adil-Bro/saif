@@ -53,6 +53,8 @@ private val WhatsAppGreen = Color(0xFF25D366)
 @Composable
 fun FridayAnnouncementDialog(
     mosqueName: String,
+    startDate: String = "",
+    endDate: String = "",
     lastWeekIncome: Double,
     lastWeekExpense: Double,
     totalBalance: Double,
@@ -63,15 +65,21 @@ fun FridayAnnouncementDialog(
     var copied by remember { mutableStateOf(false) }
 
     val cleanMosque = mosqueName.ifBlank { "বায়তুল আমান জামে মসজিদ" }
-    val today = Format.todayIso()
+    val (defaultStart, defaultEnd) = remember { Format.last7DaysIso() }
+    val sDate = startDate.ifBlank { defaultStart }
+    val eDate = endDate.ifBlank { defaultEnd }
+    val dateRangeText = remember(sDate, eDate) { Format.dateRangeBengali(sDate, eDate) }
+    val netChange = lastWeekIncome - lastWeekExpense
 
-    val announcementText = remember(cleanMosque, lastWeekIncome, lastWeekExpense, totalBalance, fundBalances) {
+    val announcementText = remember(cleanMosque, lastWeekIncome, lastWeekExpense, totalBalance, fundBalances, dateRangeText) {
         buildString {
             append("আসসালামু আলাইকুম ওয়া রাহমাতুল্লাহ।\n")
-            append("সম্মানিত মুসল্লিয়ান, $cleanMosque-এর সাপ্তাহিক আয়-ব্যয়ের হিসাব বিবরণী ($today):\n\n")
+            append("সম্মানিত মুসল্লিয়ান, $cleanMosque-এর সাপ্তাহিক আয়-ব্যয়ের হিসাব বিবরণী ($dateRangeText):\n\n")
             append("১. বিগত ৭ দিনের মোট আয় (দান ও চাঁদা): ${Format.money(lastWeekIncome)}\n")
             append("২. বিগত ৭ দিনের মোট খরচ: ${Format.money(lastWeekExpense)}\n")
-            append("৩. বর্তমান সর্বমোট তহবিল স্থিতি (ব্যালেন্স): ${Format.money(totalBalance)}\n\n")
+            val netSign = if (netChange >= 0) "+ " else "- "
+            append("৩. ৭ দিনের নীট স্থিতি পরিবর্তন: $netSign${Format.money(Math.abs(netChange))}\n")
+            append("৪. বর্তমান সর্বমোট তহবিল স্থিতি (ব্যালেন্স): ${Format.money(totalBalance)}\n\n")
             if (fundBalances.isNotEmpty()) {
                 append("তহবিলভিত্তিক ব্যালেন্স:\n")
                 fundBalances.take(5).forEach { (fund, balance) ->
@@ -138,7 +146,7 @@ fun FridayAnnouncementDialog(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            "তারিখ: $today (জুমার নামাজের হিসাব বিবরণী)",
+                            "হিসাব পরিসীমা: $dateRangeText (বিগত ৭ দিন)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -159,7 +167,13 @@ fun FridayAnnouncementDialog(
                         )
 
                         AnnouncementStatRow(
-                            label = "বর্তমান মোট ব্যালেন্স",
+                            label = "৭ দিনের নীট পরিবর্তন",
+                            amount = (if (netChange >= 0) "+" else "") + Format.money(netChange),
+                            color = if (netChange >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+
+                        AnnouncementStatRow(
+                            label = "বর্তমান সর্বমোট ব্যালেন্স",
                             amount = Format.money(totalBalance),
                             color = MaterialTheme.colorScheme.onSurface,
                             isBold = true
