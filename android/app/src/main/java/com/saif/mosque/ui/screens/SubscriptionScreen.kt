@@ -104,6 +104,7 @@ import com.saif.mosque.data.outbox.DirectoryOutbox
 import com.saif.mosque.data.outbox.DirectorySync
 import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.di.AppContainer
+import com.saif.mosque.ui.components.ContinuousVoiceAssistantDialog
 import com.saif.mosque.ui.components.EmptyBox
 import com.saif.mosque.ui.components.FullWidthDialogProperties
 import com.saif.mosque.ui.components.fullWidthDialog
@@ -631,6 +632,7 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
     var editingMember by remember { mutableStateOf<Donor?>(null) }
     var collectingForMember by remember { mutableStateOf<MemberMonthlyStatus?>(null) }
     var activeReceiptData by remember { mutableStateOf<ReceiptData?>(null) }
+    var showVoiceAssistant by remember { mutableStateOf(false) }
 
     // Speech Recognition Activity Result Launcher
     val speechLauncher = rememberLauncherForActivityResult(
@@ -735,7 +737,7 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
                             }
 
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FilledTonalIconButton(onClick = { launchSpeech() }) {
+                                FilledTonalIconButton(onClick = { showVoiceAssistant = true }) {
                                     Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.voice_input))
                                 }
                                 IconButton(onClick = {
@@ -987,6 +989,18 @@ fun SubscriptionScreen(container: AppContainer, user: AppUser) {
                 }
             )
         }
+    }
+
+    if (showVoiceAssistant) {
+        ContinuousVoiceAssistantDialog(
+            onDismiss = { showVoiceAssistant = false },
+            onProcessText = { text ->
+                vm.onVoiceRecognized(text)
+            },
+            onFallbackSystemSpeech = {
+                launchSpeech()
+            }
+        )
     }
 
     // Voice Review Dialog

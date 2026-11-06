@@ -300,4 +300,16 @@
     <string name="duplicate_collect_warning">যাদের এই মাসের টাকা ইতিমধ্যে দেওয়া হয়েছে তাদের বাদ দিয়ে বাকিদের কালেকশন করা হয়েছে</string>
     <string name="payroll_title">কর্মী ও ইমাম-মুয়াজ্জিন বেতন</string>
     <string name="projects_title">বিশেষ ইভেন্ট ও প্রজেক্ট ফান্ড</string>
+    <string name="voice_assistant_title">স্মার্ট ভয়েস ইনপুট সহকারী</string>
+    <string name="voice_assistant_subtitle">মাঝে বিরতি নিয়ে একনাগাড়ে বলুন — স্বয়ংক্রিয়ভাবে বন্ধ হবে না</string>
+    <string name="voice_assistant_listening">শুনছি… নাম ও টাকার পরিমাণ বলুন</string>
+    <string name="voice_assistant_paused">মাইক সাময়িক বন্ধ আছে। চালু করতে ট্যাপ করুন</string>
+    <string name="voice_btn_pause">মাইক থামান</string>
+    <string name="voice_btn_resume">মাইক চালু করুন</string>
+    <string name="voice_btn_clear">মুছে ফেলুন</string>
+    <string name="voice_btn_done">যাচাই ও প্রসেস করুন</string>
+    <string name="voice_editor_hint">যা বলছেন তা এখানে জমা হবে। প্রয়োজনে কিবোর্ড দিয়ে এডিট বা সংশোধন করতে পারবেন।</string>
+    <string name="voice_permission_rationale">অবিরাম ভয়েস ইনপুটের জন্য মাইক্রোফোন ব্যবহারের অনুমতি প্রয়োজন।</string>
+    <string name="voice_grant_permission">অনুমতি দিন</string>
+    <string name="voice_fallback_intent">সিস্টেম ডায়ালগ ব্যবহার করুন</string>
 </resources>

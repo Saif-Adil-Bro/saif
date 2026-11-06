@@ -330,4 +330,16 @@
     <string name="duplicate_collect_warning">Some members have already paid for this month and were skipped</string>
     <string name="payroll_title">Staff Payroll</string>
     <string name="projects_title">Special Projects</string>
+    <string name="voice_assistant_title">Smart Voice Assistant</string>
+    <string name="voice_assistant_subtitle">Speak continuously with pauses — will not auto-close</string>
+    <string name="voice_assistant_listening">Listening… Speak names &amp; amounts</string>
+    <string name="voice_assistant_paused">Microphone paused. Tap to resume</string>
+    <string name="voice_btn_pause">Pause</string>
+    <string name="voice_btn_resume">Resume Mic</string>
+    <string name="voice_btn_clear">Clear</string>
+    <string name="voice_btn_done">Process Dues</string>
+    <string name="voice_editor_hint">Recognized text will appear here. You can also edit manually with keyboard.</string>
+    <string name="voice_permission_rationale">Microphone permission is required for continuous in-app voice recognition.</string>
+    <string name="voice_grant_permission">Grant Permission</string>
+    <string name="voice_fallback_intent">Use System Speech</string>
 </resources>
