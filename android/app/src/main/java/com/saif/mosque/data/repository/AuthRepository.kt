@@ -288,7 +288,7 @@ class AuthRepository(
             secondaryAuth.signOut()
             val resId = when (ex) {
                 is com.google.firebase.auth.FirebaseAuthUserCollisionException -> R.string.email_in_use
-                is com.google.firebase.auth.FirebaseAuthWeakPasswordException -> R.string.password_min_length
+                is com.google.firebase.auth.FirebaseAuthWeakPasswordException -> R.string.weak_password
                 is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> R.string.invalid_email
                 else -> R.string.error_generic
             }

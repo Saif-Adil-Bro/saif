@@ -598,7 +598,7 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
                                 items(report.expenses, key = { it.id }) { e ->
                                     RecordCard(
                                         title = e.title,
-                                        supporting = Format.date(e.date) + if (e.voucherNo.isNotBlank()) " · #${e.voucherNo}" else "",
+                                        supporting = Format.date(e.date) + if (e.receiptNo.isNotBlank()) " · #${e.receiptNo}" else "",
                                         amount = Format.money(e.amount),
                                         amountColor = MaterialTheme.colorScheme.error
                                     )
@@ -690,7 +690,7 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
                                 items(report.expenses, key = { it.id }) { e ->
                                     RecordCard(
                                         title = e.title,
-                                        supporting = Format.date(e.date) + if (e.voucherNo.isNotBlank()) " · #${e.voucherNo}" else "",
+                                        supporting = Format.date(e.date) + if (e.receiptNo.isNotBlank()) " · #${e.receiptNo}" else "",
                                         amount = Format.money(e.amount),
                                         amountColor = MaterialTheme.colorScheme.error
                                     )
@@ -750,7 +750,7 @@ fun ReportsScreen(container: AppContainer, user: AppUser) {
                                 items(report.expenses, key = { it.id }) { e ->
                                     RecordCard(
                                         title = e.title,
-                                        supporting = "${e.paidTo.ifBlank { "ব্যয়" }}${if (e.voucherNo.isNotBlank()) " · #${e.voucherNo}" else ""}",
+                                        supporting = "${e.paidTo.ifBlank { "ব্যয়" }}${if (e.receiptNo.isNotBlank()) " · #${e.receiptNo}" else ""}",
                                         amount = Format.money(e.amount),
                                         amountColor = MaterialTheme.colorScheme.error
                                     )

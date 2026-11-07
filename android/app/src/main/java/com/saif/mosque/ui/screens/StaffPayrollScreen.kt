@@ -173,7 +173,7 @@ class StaffPayrollViewModel(
                             (e.title.contains(staff.name.trim(), ignoreCase = true) &&
                                 (e.category.contains("বেতন", ignoreCase = true) || e.title.contains("বেতন", ignoreCase = true)))
                     }
-                    val totalStaffPaid = matchingExpenses.sumOf { it.amount }
+                    val totalStaffPaid = matchingExpenses.sumOf { Math.round(it.amount * 100L) } / 100.0
                     val isPaid = matchingExpenses.isNotEmpty() && (totalStaffPaid >= designated || designated == 0.0)
                     StaffPayrollItem(
                         user = staff,
@@ -324,8 +324,8 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
             }
             is UiState.Success -> {
                 val (items, funds) = s.data
-                val totalDesignated = items.sumOf { it.designatedSalary }
-                val totalPaid = items.sumOf { it.totalPaidAmount }
+                val totalDesignated = items.sumOf { Math.round(it.designatedSalary * 100L) } / 100.0
+                val totalPaid = items.sumOf { Math.round(it.totalPaidAmount * 100L) } / 100.0
                 val paidCount = items.count { it.isPaid }
                 val pendingCount = items.size - paidCount
 
