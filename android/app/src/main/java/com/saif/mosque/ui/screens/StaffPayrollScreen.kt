@@ -1,6 +1,7 @@
 package com.saif.mosque.ui.screens
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +29,9 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -44,6 +47,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -81,6 +85,7 @@ import com.saif.mosque.data.model.salaryAmount
 import com.saif.mosque.data.model.withSalaryAmount
 import com.saif.mosque.data.repository.LedgerRepository
 import com.saif.mosque.di.AppContainer
+import com.saif.mosque.ui.components.DatePickerField
 import com.saif.mosque.ui.components.EmptyBox
 import com.saif.mosque.ui.components.FullWidthDialogProperties
 import com.saif.mosque.ui.components.fullWidthDialog
@@ -89,6 +94,7 @@ import com.saif.mosque.util.Format
 import com.saif.mosque.util.Msg
 import com.saif.mosque.util.Permissions
 import com.saif.mosque.util.ReceiptData
+import com.saif.mosque.util.ReceiptHelper
 import com.saif.mosque.util.UiState
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -106,16 +112,22 @@ data class StaffPayrollItem(
     val user: AppUser,
     val designatedSalary: Double,
     val isPaid: Boolean,
-    val paidExpense: Expense? = null
-)
+    val paidExpenses: List<Expense> = emptyList(),
+    val totalPaidAmount: Double = 0.0
+) {
+    val paidExpense: Expense? get() = paidExpenses.firstOrNull()
+}
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class StaffPayrollViewModel(
     private val repo: LedgerRepository,
     private val queue: LedgerQueue,
     private val mosqueId: String,
     val currentUser: AppUser
 ) : ViewModel() {
-    val canEdit = Permissions.canEditExpenses(currentUser.role)
+    val canEditSalary = Permissions.canEditMembers(currentUser.role)
+    val canPaySalary = Permissions.canEditExpenses(currentUser.role)
+    val canEdit = canPaySalary
 
     private val _yearMonth = MutableStateFlow(Format.currentYearMonth())
     val yearMonth: StateFlow<Pair<Int, Int>> = _yearMonth
@@ -123,34 +135,56 @@ class StaffPayrollViewModel(
     private val _messages = MutableSharedFlow<Msg>()
     val messages = _messages.asSharedFlow()
 
-    private val membersFlow = repo.observeMembers(mosqueId).catch { emit(emptyList()) }
+    val allMembersFlow = repo.observeMembers(mosqueId).catch { emit(emptyList()) }
     val fundsFlow = repo.observeFunds(mosqueId).catch { emit(emptyList()) }
 
     val state: StateFlow<UiState<Pair<List<StaffPayrollItem>, List<Fund>>>> =
-        combine(_yearMonth, membersFlow, fundsFlow) { ym, members, funds ->
-            val (y, m) = ym
+        _yearMonth.flatMapLatest { (y, m) ->
             val (start, end) = Format.yearMonthIso(y, m)
-            val monthExpenses = try {
-                repo.expensesInRange(mosqueId, start, end)
-            } catch (_: Exception) {
-                emptyList()
-            }
-
-            val staffUsers = members.filter { it.active && it.isStaffMember() }
-            val items = staffUsers.map { staff ->
-                val designated = staff.salaryAmount() ?: 0.0
-                val matchingExpense = monthExpenses.find { e ->
-                    e.paidTo.trim().equals(staff.name.trim(), ignoreCase = true) ||
-                            (e.title.contains(staff.name.trim(), ignoreCase = true) && e.category.contains("বেতন", ignoreCase = true))
+            val serverExpFlow = repo.observeMonthExpenses(mosqueId, start, end).catch { emit(emptyList()) }
+            val queuedExpFlow = queue.store.observe(currentUser.id, mosqueId, "expenses").map { list ->
+                list.filter { q ->
+                    q.state != "BLOCKED" && q.draft.date >= start && q.draft.date <= end
+                }.map { q ->
+                    Expense(
+                        id = q.draft.id,
+                        mosqueId = q.draft.mosqueId,
+                        accountId = q.draft.sourceFundId,
+                        title = q.draft.title,
+                        amount = LedgerMath.taka(q.draft.amountPoisha),
+                        category = q.draft.category,
+                        paidTo = q.draft.paidTo,
+                        receiptNo = q.draft.receiptNo,
+                        date = q.draft.date,
+                        note = q.draft.note,
+                        createdBy = q.draft.uid,
+                        createdAt = q.draft.createdAt
+                    )
                 }
-                StaffPayrollItem(
-                    user = staff,
-                    designatedSalary = designated,
-                    isPaid = matchingExpense != null,
-                    paidExpense = matchingExpense
-                )
+            }.catch { emit(emptyList()) }
+
+            combine(allMembersFlow, fundsFlow, serverExpFlow, queuedExpFlow) { members, funds, serverExp, queuedExp ->
+                val allExpenses = (queuedExp + serverExp).distinctBy { it.id }
+                val staffUsers = members.filter { it.active && it.isStaffMember() }
+                val items = staffUsers.map { staff ->
+                    val designated = staff.salaryAmount() ?: 0.0
+                    val matchingExpenses = allExpenses.filter { e ->
+                        e.paidTo.trim().equals(staff.name.trim(), ignoreCase = true) ||
+                            (e.title.contains(staff.name.trim(), ignoreCase = true) &&
+                                (e.category.contains("বেতন", ignoreCase = true) || e.title.contains("বেতন", ignoreCase = true)))
+                    }
+                    val totalStaffPaid = matchingExpenses.sumOf { it.amount }
+                    val isPaid = matchingExpenses.isNotEmpty() && (totalStaffPaid >= designated || designated == 0.0)
+                    StaffPayrollItem(
+                        user = staff,
+                        designatedSalary = designated,
+                        isPaid = isPaid,
+                        paidExpenses = matchingExpenses,
+                        totalPaidAmount = totalStaffPaid
+                    )
+                }
+                UiState.Success(items to funds) as UiState<Pair<List<StaffPayrollItem>, List<Fund>>>
             }
-            UiState.Success(items to funds) as UiState<Pair<List<StaffPayrollItem>, List<Fund>>>
         }.catch { emit(UiState.Error(it.message ?: "error")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiState.Loading)
 
@@ -179,9 +213,11 @@ class StaffPayrollViewModel(
 
     fun paySalary(
         context: android.content.Context,
+        mosqueName: String,
         staff: AppUser,
         netPayable: Double,
         fundId: String,
+        fundName: String,
         date: String,
         voucherNo: String,
         note: String,
@@ -211,13 +247,13 @@ class StaffPayrollViewModel(
             queue.enqueue(draft)
 
             val receipt = ReceiptData(
-                mosqueName = "",
+                mosqueName = mosqueName.ifBlank { "মসজিদ" },
                 receiptNo = voucherNo.trim(),
                 donorName = cleanName,
                 donorPhone = staff.phone,
                 amount = netPayable,
                 date = date.trim(),
-                fundName = "বেতন ফান্ড",
+                fundName = fundName.ifBlank { "বেতন ফান্ড" },
                 purpose = "মাসিক বেতন/সম্মানী ($monthLabel)",
                 receivedBy = currentUser.name
             )
@@ -250,10 +286,15 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
 
     val state by vm.state.collectAsStateWithLifecycle()
     val ym by vm.yearMonth.collectAsStateWithLifecycle()
+    val allMembers by vm.allMembersFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val mosqueFlow = remember(mosqueId) { container.ledgerRepository.observeMosque(mosqueId).catch { emit(null) } }
+    val mosqueInfo by mosqueFlow.collectAsStateWithLifecycle(initialValue = null)
 
     var payingStaff by remember { mutableStateOf<StaffPayrollItem?>(null) }
     var editingSalaryFor by remember { mutableStateOf<AppUser?>(null) }
     var activeReceiptData by remember { mutableStateOf<ReceiptData?>(null) }
+    var showAddStaffDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(vm.messages) {
         vm.messages.collect { msg ->
@@ -284,7 +325,7 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
             is UiState.Success -> {
                 val (items, funds) = s.data
                 val totalDesignated = items.sumOf { it.designatedSalary }
-                val totalPaid = items.filter { it.isPaid }.sumOf { it.paidExpense?.amount ?: it.designatedSalary }
+                val totalPaid = items.sumOf { it.totalPaidAmount }
                 val paidCount = items.count { it.isPaid }
                 val pendingCount = items.size - paidCount
 
@@ -296,7 +337,7 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(top = 4.dp, bottom = 68.dp)
                 ) {
-                    // 1. Month navigation
+                    // 1. Month navigation & Add Staff action
                     item(key = "payroll_month_header") {
                         Row(
                             Modifier.fillMaxWidth(),
@@ -317,17 +358,26 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
                                 }
                             }
 
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer
-                            ) {
-                                Text(
-                                    "স্টাফ বেতন শীট",
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (vm.canEditSalary) {
+                                    AssistChip(
+                                        onClick = { showAddStaffDialog = true },
+                                        label = { Text(stringResource(R.string.add_to_payroll), style = MaterialTheme.typography.labelSmall) },
+                                        leadingIcon = { Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        "স্টাফ বেতন শীট",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
                             }
                         }
                     }
@@ -347,24 +397,26 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
                     // 3. Staff items
                     if (items.isEmpty()) {
                         item(key = "empty_staff_box") {
-                            EmptyBox("কোন স্টাফ বা ইমাম-মুয়াজ্জিন সদস্য পাওয়া যায়নি। মেম্বার্স মেনু থেকে পদবি দিয়ে সদস্য যুক্ত করুন।")
+                            EmptyBox("কোন স্টাফ বা ইমাম-মুয়াজ্জিন সদস্য পাওয়া যায়নি। 'বেতনে সদস্য যুক্ত করুন' বাটনে চাপ দিয়ে সদস্য যোগ করুন।")
                         }
                     } else {
                         items(items, key = { it.user.id }) { item ->
                             StaffPayrollCard(
                                 item = item,
-                                canEdit = vm.canEdit,
+                                canEditSalary = vm.canEditSalary,
+                                canPaySalary = vm.canPaySalary,
                                 onPaySalary = { payingStaff = item },
                                 onEditSalary = { editingSalaryFor = item.user },
                                 onViewReceipt = { exp ->
+                                    val fundTitle = funds.find { it.id == exp.accountId }?.name ?: "সাধারণ তহবিল"
                                     activeReceiptData = ReceiptData(
-                                        mosqueName = "",
+                                        mosqueName = mosqueInfo?.name ?: "",
                                         receiptNo = exp.receiptNo,
                                         donorName = exp.paidTo,
                                         donorPhone = item.user.phone,
                                         amount = exp.amount,
                                         date = exp.date,
-                                        fundName = "বেতন ফান্ড",
+                                        fundName = fundTitle,
                                         purpose = exp.title,
                                         receivedBy = exp.createdBy
                                     )
@@ -386,12 +438,14 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
             baseSalary = target.designatedSalary,
             funds = funds,
             onDismiss = { payingStaff = null },
-            onConfirm = { netPayable, fundId, date, voucherNo, note ->
+            onConfirm = { netPayable, fundId, fundName, date, voucherNo, note ->
                 vm.paySalary(
                     context = context,
+                    mosqueName = mosqueInfo?.name ?: "",
                     staff = target.user,
                     netPayable = netPayable,
                     fundId = fundId,
+                    fundName = fundName,
                     date = date,
                     voucherNo = voucherNo,
                     note = note
@@ -399,6 +453,20 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
                     payingStaff = null
                     activeReceiptData = receipt
                 }
+            }
+        )
+    }
+
+    // Add Staff to Payroll Dialog
+    if (showAddStaffDialog) {
+        val currentStaffIds = (state as? UiState.Success)?.data?.first?.map { it.user.id }?.toSet() ?: emptySet()
+        val nonStaffMembers = allMembers.filter { it.active && it.id !in currentStaffIds }
+        AddStaffToPayrollDialog(
+            availableMembers = nonStaffMembers,
+            onDismiss = { showAddStaffDialog = false },
+            onSelectMember = { member ->
+                showAddStaffDialog = false
+                editingSalaryFor = member
             }
         )
     }
@@ -429,7 +497,8 @@ fun StaffPayrollScreen(container: AppContainer, user: AppUser) {
 @Composable
 private fun StaffPayrollCard(
     item: StaffPayrollItem,
-    canEdit: Boolean,
+    canEditSalary: Boolean,
+    canPaySalary: Boolean,
     onPaySalary: () -> Unit,
     onEditSalary: () -> Unit,
     onViewReceipt: (Expense) -> Unit
@@ -522,16 +591,16 @@ private fun StaffPayrollCard(
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
-                    if (canEdit) {
+                    if (canEditSalary) {
                         IconButton(onClick = onEditSalary, modifier = Modifier.size(28.dp)) {
                             Icon(Icons.Filled.Edit, contentDescription = "বেতন পরিবর্তন", modifier = Modifier.size(14.dp))
                         }
                     }
                 }
 
-                if (item.isPaid && item.paidExpense != null) {
+                if (item.isPaid && item.totalPaidAmount > 0) {
                     Text(
-                        "প্রদত্ত: ${Format.money(item.paidExpense.amount)}",
+                        "প্রদত্ত: ${Format.money(item.totalPaidAmount)}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -546,9 +615,9 @@ private fun StaffPayrollCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (item.isPaid && item.paidExpense != null) {
+                if (item.isPaid && item.paidExpenses.isNotEmpty()) {
                     FilledTonalButton(
-                        onClick = { onViewReceipt(item.paidExpense) },
+                        onClick = { onViewReceipt(item.paidExpenses.last()) },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                         modifier = Modifier.height(32.dp)
                     ) {
@@ -556,7 +625,7 @@ private fun StaffPayrollCard(
                         Spacer(Modifier.width(4.dp))
                         Text("পে-স্লিপ দেখুন", style = MaterialTheme.typography.labelSmall)
                     }
-                } else if (canEdit) {
+                } else if (canPaySalary) {
                     Button(
                         onClick = onPaySalary,
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -580,14 +649,14 @@ private fun PaySalaryDialog(
     baseSalary: Double,
     funds: List<Fund>,
     onDismiss: () -> Unit,
-    onConfirm: (netPayable: Double, fundId: String, date: String, voucherNo: String, note: String) -> Unit
+    onConfirm: (netPayable: Double, fundId: String, fundName: String, date: String, voucherNo: String, note: String) -> Unit
 ) {
     var baseText by remember { mutableStateOf(if (baseSalary > 0) baseSalary.toLong().toString() else "") }
     var bonusText by remember { mutableStateOf("0") }
     var deductionText by remember { mutableStateOf("0") }
     var selectedFundId by remember { mutableStateOf(funds.find { it.code == "GEN" }?.id ?: funds.firstOrNull()?.id ?: "") }
     var date by remember { mutableStateOf(Format.todayIso()) }
-    var voucherNo by remember { mutableStateOf("PAY-${Format.todayIso().replace("-", "")}") }
+    var voucherNo by remember { mutableStateOf(ReceiptHelper.generateReceiptNo("PAY", Format.todayIso())) }
     var note by remember { mutableStateOf("") }
     var fundDropdownExpanded by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -685,18 +754,25 @@ private fun PaySalaryDialog(
                     }
                 }
 
-                OutlinedTextField(
+                DatePickerField(
+                    label = "পরিশোধের তারিখ *",
                     value = date,
-                    onValueChange = { date = it },
-                    label = { Text("পরিশোধের তারিখ (YYYY-MM-DD)") },
-                    singleLine = true,
+                    onValueChange = { newDate ->
+                        date = newDate
+                        voucherNo = ReceiptHelper.generateReceiptNo("PAY", newDate)
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = voucherNo,
                     onValueChange = { voucherNo = it },
-                    label = { Text("ভাউচার / রশিদ নং") },
+                    label = { Text("ভাউচার / রশিদ নং *") },
+                    trailingIcon = {
+                        IconButton(onClick = { voucherNo = ReceiptHelper.generateReceiptNo("PAY", date) }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "নতুন ভাউচার নং")
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -732,7 +808,9 @@ private fun PaySalaryDialog(
                         append("মূল: $base, বোনাস: $bonus, কর্তন: $deduction")
                         if (note.isNotBlank()) append(" | ${note.trim()}")
                     }
-                    onConfirm(netPayable, selectedFundId, date.trim(), voucherNo.trim(), fullNote)
+                    val selectedFund = funds.find { it.id == selectedFundId }
+                    val fundName = selectedFund?.name ?: "বেতন ফান্ড"
+                    onConfirm(netPayable, selectedFundId, fundName, date.trim(), voucherNo.trim(), fullNote)
                 }
             ) {
                 Text("বেতন পরিশোধ নিশ্চিত করুন")
@@ -740,6 +818,68 @@ private fun PaySalaryDialog(
         },
         dismissButton = {
             TextButton(enabled = !isSubmitting, onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun AddStaffToPayrollDialog(
+    availableMembers: List<AppUser>,
+    onDismiss: () -> Unit,
+    onSelectMember: (AppUser) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = FullWidthDialogProperties,
+        modifier = Modifier.fullWidthDialog(8),
+        title = {
+            Text(stringResource(R.string.select_staff_to_add), fontWeight = FontWeight.Bold)
+        },
+        text = {
+            if (availableMembers.isEmpty()) {
+                Text("সকল সক্রিয় সদস্য ইতিমধ্যে বেতন তালিকায় যুক্ত আছেন।")
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(availableMembers, key = { it.id }) { member ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectMember(member) }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(member.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        member.cleanDisplayDesignation().ifBlank { roleLabel(member.role) },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
         }
     )
 }

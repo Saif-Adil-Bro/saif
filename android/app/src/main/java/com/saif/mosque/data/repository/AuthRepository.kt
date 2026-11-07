@@ -25,7 +25,8 @@ import java.security.SecureRandom
 class AuthRepository(
     private val auth: FirebaseAuth,
     private val db: FirebaseFirestore,
-    private val session: SessionManager
+    private val session: SessionManager,
+    private val context: android.content.Context? = null
 ) {
     /** Firebase auth state stream. */
     val authState: Flow<com.google.firebase.auth.FirebaseUser?> = auth.authStateChangesFlow()
@@ -144,7 +145,9 @@ class AuthRepository(
         db.collection("mosques").document(mosqueId).snapshotsFlow().map { it.exists() && it.getBoolean("active") == true }
 
     /**
-     * Provision a committee member through the trusted callable backend.
+     * Provision a committee member manually (restricted to ADMIN or SUPERADMIN).
+     * Tries the trusted Cloud Functions callable backend first, falling back to
+     * reciprocal rules-validated client provisioning when Cloud Functions is unavailable.
      */
     suspend fun createMember(
         currentUser: AppUser,
@@ -155,25 +158,141 @@ class AuthRepository(
         designation: String,
         password: String
     ): Result<AppUser> {
-        if (currentUser.role != Role.SUPERADMIN && currentUser.mosqueId.isNullOrEmpty()) {
+        if (currentUser.role != Role.ADMIN && currentUser.role != Role.SUPERADMIN) {
             return Result.failure(AuthException(R.string.permission_denied))
         }
+        val mosqueId = currentUser.mosqueId
+        if (currentUser.role != Role.SUPERADMIN && mosqueId.isNullOrEmpty()) {
+            return Result.failure(AuthException(R.string.permission_denied))
+        }
+        val normalizedEmail = email.trim().lowercase(java.util.Locale.ROOT)
+        val cleanName = name.trim()
+        val cleanPhone = phone.trim()
+        val cleanDesignation = designation.trim()
+
         return try {
             val result = com.google.firebase.functions.FirebaseFunctions.getInstance().getHttpsCallable("mutate")
-                .call(mapOf("operation" to "createMember", "mosqueId" to (currentUser.mosqueId ?: ""),
-                    "value" to mapOf("name" to name, "email" to email, "phone" to phone,
-                        "role" to role.name, "designation" to designation, "password" to password)))
+                .call(mapOf("operation" to "createMember", "mosqueId" to (mosqueId ?: ""),
+                    "value" to mapOf("name" to cleanName, "email" to normalizedEmail, "phone" to cleanPhone,
+                        "role" to role.name, "designation" to cleanDesignation, "password" to password)))
                 .await().getData() as Map<*, *>
-            Result.success(AppUser(id = result["uid"] as String, name = name, email = email,
-                phone = phone, role = role, mosqueId = currentUser.mosqueId, designation = designation))
-        } catch (ex: kotlinx.coroutines.CancellationException) { throw ex } catch (ex: Exception) {
+            Result.success(AppUser(id = result["uid"] as String, name = cleanName, email = normalizedEmail,
+                phone = cleanPhone, role = role, mosqueId = mosqueId, designation = cleanDesignation))
+        } catch (ex: kotlinx.coroutines.CancellationException) {
+            throw ex
+        } catch (ex: Exception) {
+            val isFunctionsUnavailable = (ex as? com.google.firebase.functions.FirebaseFunctionsException)?.code in setOf(
+                com.google.firebase.functions.FirebaseFunctionsException.Code.NOT_FOUND,
+                com.google.firebase.functions.FirebaseFunctionsException.Code.UNAVAILABLE
+            ) || ex.message?.contains("NOT_FOUND", ignoreCase = true) == true
+
+            val ctx = context
+            if (isFunctionsUnavailable && ctx != null && mosqueId != null) {
+                return createMemberSpark(currentUser, mosqueId, cleanName, normalizedEmail, cleanPhone, role, cleanDesignation, password, ctx)
+            }
+
             val resId = when ((ex as? com.google.firebase.functions.FirebaseFunctionsException)?.code) {
                 com.google.firebase.functions.FirebaseFunctionsException.Code.NOT_FOUND -> R.string.member_service_missing
                 com.google.firebase.functions.FirebaseFunctionsException.Code.ALREADY_EXISTS -> R.string.email_in_use
                 com.google.firebase.functions.FirebaseFunctionsException.Code.PERMISSION_DENIED -> R.string.permission_denied
                 else -> R.string.error_generic
             }
-            Result.failure(AuthException(resId))
+            Result.failure(AuthException(resId, ex.message))
+        }
+    }
+
+    private suspend fun createMemberSpark(
+        adminUser: AppUser,
+        mosqueId: String,
+        name: String,
+        normalizedEmail: String,
+        phone: String,
+        role: Role,
+        designation: String,
+        password: String,
+        ctx: android.content.Context
+    ): Result<AppUser> {
+        val secondaryApp = com.saif.mosque.data.invitations.PrototypeOnboardingEnvironment.get(ctx)
+        val secondaryAuth = com.google.firebase.auth.FirebaseAuth.getInstance(secondaryApp)
+        secondaryAuth.signOut()
+        return try {
+            val inviteRef = db.collection("mosques").document(mosqueId).collection("invitations").document()
+            val inviteId = inviteRef.id
+            val now = System.currentTimeMillis()
+            val expiresAt = com.google.firebase.Timestamp(java.util.Date(now + 7 * 24 * 60 * 60 * 1000L))
+
+            val inviteData = mapOf(
+                "mosqueId" to mosqueId,
+                "email" to normalizedEmail,
+                "name" to name,
+                "phone" to phone,
+                "role" to role.name,
+                "designation" to designation,
+                "createdBy" to adminUser.id,
+                "status" to "pending",
+                "expiresAt" to expiresAt
+            )
+            inviteRef.set(inviteData).await()
+
+            val authResult = try {
+                secondaryAuth.createUserWithEmailAndPassword(normalizedEmail, password).await()
+            } catch (collision: com.google.firebase.auth.FirebaseAuthUserCollisionException) {
+                inviteRef.delete().await()
+                return Result.failure(AuthException(R.string.email_in_use, collision.message))
+            }
+            val newUid = authResult.user?.uid ?: throw IllegalStateException("User creation failed")
+
+            val secondaryDb = FirebaseFirestore.getInstance(secondaryApp)
+            val parent = secondaryDb.collection("mosques").document(mosqueId)
+            val invitationDoc = parent.collection("invitations").document(inviteId)
+            val profileDoc = secondaryDb.collection("users").document(newUid)
+            val claimDoc = parent.collection("memberClaims").document(normalizedEmail)
+
+            val profileData = mapOf(
+                "name" to name,
+                "email" to normalizedEmail,
+                "phone" to phone,
+                "role" to role.name,
+                "mosqueId" to mosqueId,
+                "designation" to designation,
+                "active" to true,
+                "createdAt" to now,
+                "inviteId" to inviteId
+            )
+
+            secondaryDb.batch()
+                .set(profileDoc, profileData)
+                .set(claimDoc, mapOf("uid" to newUid, "inviteId" to inviteId))
+                .update(invitationDoc, mapOf("status" to "accepted", "acceptedBy" to newUid))
+                .update(parent, mapOf(
+                    "memberCount" to com.google.firebase.firestore.FieldValue.increment(1),
+                    "memberOpId" to newUid
+                ))
+                .commit().await()
+
+            secondaryAuth.signOut()
+
+            Result.success(AppUser(
+                id = newUid,
+                name = name,
+                email = normalizedEmail,
+                phone = phone,
+                role = role,
+                mosqueId = mosqueId,
+                designation = designation,
+                active = true
+            ))
+        } catch (ex: kotlinx.coroutines.CancellationException) {
+            throw ex
+        } catch (ex: Exception) {
+            secondaryAuth.signOut()
+            val resId = when (ex) {
+                is com.google.firebase.auth.FirebaseAuthUserCollisionException -> R.string.email_in_use
+                is com.google.firebase.auth.FirebaseAuthWeakPasswordException -> R.string.password_min_length
+                is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> R.string.invalid_email
+                else -> R.string.error_generic
+            }
+            Result.failure(AuthException(resId, ex.message))
         }
     }
 

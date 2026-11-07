@@ -20,8 +20,16 @@ fun AppUser.isStaffMember(): Boolean {
     return salaryAmount() != null ||
             designation.contains("ইমাম", ignoreCase = true) ||
             designation.contains("মুয়াজ্জিন", ignoreCase = true) ||
+            designation.contains("মুয়াজ্জিন", ignoreCase = true) ||
             designation.contains("খাদেম", ignoreCase = true) ||
+            designation.contains("খতিব", ignoreCase = true) ||
+            designation.contains("হাফেজ", ignoreCase = true) ||
+            designation.contains("ক্বারী", ignoreCase = true) ||
             designation.contains("শিক্ষক", ignoreCase = true) ||
+            designation.contains("দারোয়ান", ignoreCase = true) ||
+            designation.contains("ঝাড়ুদার", ignoreCase = true) ||
+            designation.contains("স্টাফ", ignoreCase = true) ||
+            designation.contains("কর্মী", ignoreCase = true) ||
             role == Role.IMAM
 }
 

@@ -27,7 +27,7 @@ class AppContainer(val context: Context) {
         }
     }
 
-    val authRepository = AuthRepository(auth, db, session)
+    val authRepository = AuthRepository(auth, db, session, context)
     val platformRepository = PlatformRepository(db, context)
     val ledgerRepository = LedgerRepository(db, session, context, auth)
     val dashboardRepository = DashboardRepository(db, session)

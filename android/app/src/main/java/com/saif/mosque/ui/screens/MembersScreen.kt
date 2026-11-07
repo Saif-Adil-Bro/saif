@@ -3,9 +3,12 @@ package com.saif.mosque.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -14,14 +17,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -244,6 +251,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
     }
     val canEdit = vm.canEdit && !com.saif.mosque.ui.components.LocalOfflineMode.current
     val canInvite = vm.canEdit
+    val canManualAdd = (user.role == Role.ADMIN || user.role == Role.SUPERADMIN) && !com.saif.mosque.ui.components.LocalOfflineMode.current
     val state by vm.state.collectAsStateWithLifecycle()
     val invitations by vm.invitations.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -268,14 +276,14 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (canEdit) FloatingActionButton(onClick = { editing = AppUser() }) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_member))
+            if (canManualAdd) FloatingActionButton(onClick = { editing = AppUser(); saveError = null }) {
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.manual_add_member))
             }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
         StateBox(state) { members ->
-            if (members.isEmpty() && invitations.isEmpty() && !canInvite) {
+            if (members.isEmpty() && invitations.isEmpty() && !canInvite && !canManualAdd) {
                 EmptyBox()
             } else {
                 LazyColumn(
@@ -283,17 +291,31 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
                 ) {
-                    if (canInvite) {
+                    if (canInvite || canManualAdd) {
                         item(key = "invite-action-bar") {
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AssistChip(
-                                    onClick = { inviting = true; saveError = null },
-                                    label = { Text(stringResource(R.string.invitation_member_title)) }
-                                )
+                                if (canManualAdd) {
+                                    Button(
+                                        onClick = { editing = AppUser(); saveError = null }
+                                    ) {
+                                        Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.manual_add_member))
+                                    }
+                                }
+                                if (canInvite) {
+                                    OutlinedButton(
+                                        onClick = { inviting = true; saveError = null }
+                                    ) {
+                                        Icon(Icons.Filled.Mail, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.invitation_member_title))
+                                    }
+                                }
                             }
                         }
                     }
@@ -445,7 +467,7 @@ internal fun MemberFormDialog(
         onDismissRequest = { if (!saving) onDismiss() },
         properties = FullWidthDialogProperties,
         modifier = Modifier.fullWidthDialog(8),
-        title = { Text(stringResource(if (isNew) R.string.add_member else R.string.edit_member)) },
+        title = { Text(stringResource(if (isNew) R.string.manual_add_member_title else R.string.edit_member)) },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LabeledField(stringResource(R.string.name), name, { name = it },

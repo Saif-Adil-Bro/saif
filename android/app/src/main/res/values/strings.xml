@@ -358,7 +358,6 @@
     <string name="weekly_tab">Weekly</string>
     <string name="monthly_tab">Monthly</string>
     <string name="opening_balance">Opening Balance</string>
-    <string name="closing_balance">Closing Balance</string>
     <string name="net_balance">Net Balance</string>
     <string name="transfers_of_period">Transfers</string>
     <string name="daily_report_title">Daily Financial Report</string>
@@ -368,4 +367,8 @@
     <string name="today_expense">Today\'s Expense</string>
     <string name="pick_date">Pick Date</string>
     <string name="no_transfers">No transfers in this period</string>
+    <string name="manual_add_member">Add Member (Manual)</string>
+    <string name="manual_add_member_title">Add Committee Member (Manual)</string>
+    <string name="add_to_payroll">Add Member to Payroll</string>
+    <string name="select_staff_to_add">Select Member for Payroll</string>
 </resources>

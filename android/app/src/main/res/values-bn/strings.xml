@@ -328,7 +328,6 @@
     <string name="weekly_tab">সাপ্তাহিক</string>
     <string name="monthly_tab">মাসিক</string>
     <string name="opening_balance">প্রারম্ভিক স্থিতি</string>
-    <string name="closing_balance">সমাপনী স্থিতি</string>
     <string name="net_balance">নিট পরিবর্তন</string>
     <string name="transfers_of_period">তহবিল স্থানান্তর</string>
     <string name="daily_report_title">দৈনিক আয়-ব্যয় হিসাব</string>
@@ -338,4 +337,8 @@
     <string name="today_expense">আজকের ব্যয়</string>
     <string name="pick_date">তারিখ নির্বাচন</string>
     <string name="no_transfers">এই সময়ে কোনো তহবিল স্থানান্তর নেই</string>
+    <string name="manual_add_member">সরাসরি মেম্বার যোগ</string>
+    <string name="manual_add_member_title">ম্যানুয়ালি নতুন সদস্য যোগ</string>
+    <string name="add_to_payroll">বেতনে সদস্য যুক্ত করুন</string>
+    <string name="select_staff_to_add">বেতনের জন্য সদস্য নির্বাচন করুন</string>
 </resources>
