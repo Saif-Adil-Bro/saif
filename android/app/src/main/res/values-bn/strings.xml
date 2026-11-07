@@ -341,4 +341,10 @@
     <string name="manual_add_member_title">ম্যানুয়ালি নতুন সদস্য যোগ</string>
     <string name="add_to_payroll">বেতনে সদস্য যুক্ত করুন</string>
     <string name="select_staff_to_add">বেতনের জন্য সদস্য নির্বাচন করুন</string>
+    <string name="invitation_history">আমন্ত্রণ ইতিহাস</string>
+    <string name="invitation_history_title">আমন্ত্রণ ইতিহাস ও লগ</string>
+    <string name="no_invitations">এখনো কোনো আমন্ত্রণের রেকর্ড নেই</string>
+    <string name="filter_all">সকল</string>
+    <string name="filter_pending">অপেক্ষমান</string>
+    <string name="total_invitations">মোট আমন্ত্রণ</string>
 </resources>

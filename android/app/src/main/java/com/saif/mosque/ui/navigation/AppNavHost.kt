@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -53,6 +54,7 @@ import com.saif.mosque.ui.screens.DashboardScreen
 import com.saif.mosque.ui.screens.DonorsScreen
 import com.saif.mosque.ui.screens.ExpensesScreen
 import com.saif.mosque.ui.screens.FundsScreen
+import com.saif.mosque.ui.screens.InvitationHistoryScreen
 import com.saif.mosque.ui.screens.LoginScreen
 import com.saif.mosque.ui.screens.MembersScreen
 import com.saif.mosque.ui.screens.MoreScreen
@@ -111,7 +113,35 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
                 composable(Screen.Expenses.route) { MosqueShell(nav, s.user, R.string.expenses) { ExpensesScreen(container, s.user) } }
                 composable(Screen.Donors.route) { MosqueShell(nav, s.user, R.string.donors) { DonorsScreen(container, s.user) } }
                 composable(Screen.Subscriptions.route) { MosqueShell(nav, s.user, R.string.subscriptions_title) { SubscriptionScreen(container, s.user) } }
-                composable(Screen.Members.route) { MosqueShell(nav, s.user, R.string.members) { MembersScreen(container, s.user) } }
+                composable(Screen.Members.route) {
+                    MosqueShell(
+                        nav = nav,
+                        user = s.user,
+                        titleRes = R.string.members,
+                        actions = {
+                            if (Permissions.canEditMembers(s.user.role)) {
+                                IconButton(onClick = { nav.navigate(Screen.InvitationHistory.route) }) {
+                                    Icon(
+                                        Icons.Filled.History,
+                                        contentDescription = stringResource(R.string.invitation_history),
+                                        tint = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        MembersScreen(
+                            container = container,
+                            user = s.user,
+                            onOpenInvitationHistory = { nav.navigate(Screen.InvitationHistory.route) }
+                        )
+                    }
+                }
+                composable(Screen.InvitationHistory.route) {
+                    MosqueShell(nav, s.user, R.string.invitation_history) {
+                        InvitationHistoryScreen(container, s.user)
+                    }
+                }
                 composable(Screen.Transfers.route) { MosqueShell(nav, s.user, R.string.transfers) { TransfersScreen(container, s.user) } }
                 composable(Screen.Reports.route) { MosqueShell(nav, s.user, R.string.reports) { ReportsScreen(container, s.user) } }
                 composable(Screen.Payroll.route) { MosqueShell(nav, s.user, R.string.payroll_title) { StaffPayrollScreen(container, s.user) } }
@@ -141,12 +171,14 @@ fun MosqueShell(
     nav: NavHostController,
     user: AppUser,
     titleRes: Int,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
     content: @Composable () -> Unit
 ) {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val isSecondary = currentRoute in setOf(Screen.Donors.route, Screen.Subscriptions.route, Screen.Members.route,
-        Screen.Transfers.route, Screen.Reports.route, Screen.Payroll.route, Screen.Projects.route, Screen.Profile.route)
+        Screen.Transfers.route, Screen.Reports.route, Screen.Payroll.route, Screen.Projects.route, Screen.Profile.route,
+        Screen.InvitationHistory.route)
     fun selected(item: NavItem) = currentRoute == item.screen.route ||
         (isSecondary && item.screen == Screen.More)
     fun navigate(item: NavItem) {
@@ -185,6 +217,7 @@ fun MosqueShell(
                                 Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                             }
                         },
+                        actions = actions,
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.background,
                             titleContentColor = MaterialTheme.colorScheme.onBackground)

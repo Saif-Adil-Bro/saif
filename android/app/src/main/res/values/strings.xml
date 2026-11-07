@@ -371,4 +371,10 @@
     <string name="manual_add_member_title">Add Committee Member (Manual)</string>
     <string name="add_to_payroll">Add Member to Payroll</string>
     <string name="select_staff_to_add">Select Member for Payroll</string>
+    <string name="invitation_history">Invitation History</string>
+    <string name="invitation_history_title">Invitation History &amp; Logs</string>
+    <string name="no_invitations">No invitations recorded yet</string>
+    <string name="filter_all">All</string>
+    <string name="filter_pending">Pending</string>
+    <string name="total_invitations">Total Invitations</string>
 </resources>

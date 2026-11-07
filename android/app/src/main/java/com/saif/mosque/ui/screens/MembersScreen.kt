@@ -17,13 +17,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -236,7 +240,11 @@ fun roleLabel(role: Role): String = when (role) {
 }
 
 @Composable
-fun MembersScreen(container: AppContainer, user: AppUser) {
+fun MembersScreen(
+    container: AppContainer,
+    user: AppUser,
+    onOpenInvitationHistory: () -> Unit = {}
+) {
     val mosqueId = user.mosqueId ?: return
     val vm: MembersViewModel = viewModel {
         MembersViewModel(
@@ -283,7 +291,7 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
         snackbarHost = { SnackbarHost(snackbar) }
     ) { inner ->
         StateBox(state) { members ->
-            if (members.isEmpty() && invitations.isEmpty() && !canInvite && !canManualAdd) {
+            if (members.isEmpty() && !canInvite && !canManualAdd) {
                 EmptyBox()
             } else {
                 LazyColumn(
@@ -295,69 +303,61 @@ fun MembersScreen(container: AppContainer, user: AppUser) {
                         item(key = "invite-action-bar") {
                             Row(
                                 Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (canManualAdd) {
-                                    Button(
-                                        onClick = { editing = AppUser(); saveError = null }
-                                    ) {
-                                        Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(stringResource(R.string.manual_add_member))
-                                    }
-                                }
-                                if (canInvite) {
-                                    OutlinedButton(
-                                        onClick = { inviting = true; saveError = null }
-                                    ) {
-                                        Icon(Icons.Filled.Mail, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(stringResource(R.string.invitation_member_title))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    items(invitations, key = { "invite-${it.draft.id}" }) { inv ->
-                        val statusText = when (inv.state) {
-                            "READY" -> stringResource(R.string.invitation_status_ready)
-                            "ACCEPTED" -> stringResource(R.string.invitation_status_accepted)
-                            "REVOKED" -> stringResource(R.string.invitation_status_revoked)
-                            "BLOCKED" -> stringResource(R.string.sync_unconfirmed)
-                            else -> stringResource(R.string.sync_waiting)
-                        }
-                        Card(
-                            Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(inv.draft.name, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    listOf(inv.draft.email, roleLabel(inv.draft.role), statusText)
-                                        .filter { it.isNotBlank() }.joinToString(" · "),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (inv.state == "READY" && !com.saif.mosque.ui.components.LocalOfflineMode.current) {
-                                        AssistChip(
-                                            onClick = { vm.prepareShare(inv) { sharingAddress = it } },
-                                            label = { Text(stringResource(R.string.invitation_share_title)) }
-                                        )
-                                        TextButton(onClick = { vm.revokeInvitation(inv) }) {
-                                            Text(stringResource(R.string.invitation_revoke))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (canManualAdd) {
+                                        Button(
+                                            onClick = { editing = AppUser(); saveError = null }
+                                        ) {
+                                            Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(stringResource(R.string.manual_add_member))
                                         }
-                                    } else if (inv.state == "BLOCKED") {
-                                        AssistChip(
-                                            onClick = { vm.retryInvitation(inv) },
-                                            label = { Text(stringResource(R.string.retry)) }
-                                        )
+                                    }
+                                    if (canInvite) {
+                                        OutlinedButton(
+                                            onClick = { inviting = true; saveError = null }
+                                        ) {
+                                            Icon(Icons.Filled.Mail, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(stringResource(R.string.invitation_member_title))
+                                        }
+                                    }
+                                }
+
+                                if (canInvite) {
+                                    FilledTonalIconButton(
+                                        onClick = onOpenInvitationHistory
+                                    ) {
+                                        BadgedBox(
+                                            badge = {
+                                                val pendingCount = invitations.count { it.state == "READY" || it.state == "PENDING" }
+                                                if (pendingCount > 0) {
+                                                    Badge { Text(pendingCount.toString()) }
+                                                }
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.History,
+                                                contentDescription = stringResource(R.string.invitation_history)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    items(members, key = { it.id }) { m ->
+                    if (members.isEmpty()) {
+                        item(key = "empty_members") {
+                            EmptyBox()
+                        }
+                    } else {
+                        items(members, key = { it.id }) { m ->
                         val canManageTarget = canEdit && m.role != Role.SUPERADMIN &&
                             (m.role != Role.ADMIN || user.role == Role.ADMIN || user.role == Role.SUPERADMIN)
                         com.saif.mosque.ui.components.RecordCard(
