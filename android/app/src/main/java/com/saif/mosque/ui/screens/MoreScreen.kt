@@ -67,7 +67,8 @@ fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthView
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge,
+            Card(Modifier.fillMaxWidth().clickable { nav.navigate(Screen.Profile.route) },
+                shape = MaterialTheme.shapes.extraLarge,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -83,10 +84,16 @@ fun MoreScreen(nav: NavHostController, container: AppContainer, authVm: AuthView
                         Text(roleLabel(user.role), style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary)
                     }
+                    Icon(
+                        Icons.Filled.ChevronRight,
+                        contentDescription = stringResource(R.string.profile_title),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         }
         item { SectionTitle(stringResource(R.string.quick_access)) }
+        item { MenuCard(stringResource(R.string.profile_title), Icons.Filled.Person) { nav.navigate(Screen.Profile.route) } }
         item { MenuCard(stringResource(R.string.subscriptions_title), Icons.Filled.CardMembership) { nav.navigate(Screen.Subscriptions.route) } }
         item { MenuCard(stringResource(R.string.payroll_title), Icons.Filled.Badge) { nav.navigate(Screen.Payroll.route) } }
         item { MenuCard(stringResource(R.string.projects_title), Icons.Filled.Build) { nav.navigate(Screen.Projects.route) } }

@@ -312,4 +312,16 @@
     <string name="voice_permission_rationale">অবিরাম ভয়েস ইনপুটের জন্য মাইক্রোফোন ব্যবহারের অনুমতি প্রয়োজন।</string>
     <string name="voice_grant_permission">অনুমতি দিন</string>
     <string name="voice_fallback_intent">সিস্টেম ডায়ালগ ব্যবহার করুন</string>
+    <string name="profile_title">আমার প্রোফাইল</string>
+    <string name="edit_profile">প্রোফাইল সম্পাদন</string>
+    <string name="change_password">পাসওয়ার্ড পরিবর্তন</string>
+    <string name="current_password">বর্তমান পাসওয়ার্ড</string>
+    <string name="new_password">নতুন পাসওয়ার্ড</string>
+    <string name="confirm_password">নতুন পাসওয়ার্ড নিশ্চিত করুন</string>
+    <string name="passwords_mismatch">নতুন পাসওয়ার্ড দুটি মেলেনি</string>
+    <string name="password_changed_ok">পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে</string>
+    <string name="send_reset_link">রিসেট লিঙ্ক ইমেইলে পাঠান</string>
+    <string name="reset_email_sent">পাসওয়ার্ড রিসেটের লিঙ্ক আপনার ইমেইলে পাঠানো হয়েছে।</string>
+    <string name="profile_updated_ok">প্রোফাইল সফলভাবে আপডেট হয়েছে</string>
+    <string name="manage_members_btn">কমিটি ও সদস্য ব্যবস্থাপনা</string>
 </resources>

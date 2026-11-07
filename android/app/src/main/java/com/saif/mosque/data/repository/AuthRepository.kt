@@ -84,6 +84,56 @@ class AuthRepository(
         } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
     }
 
+    suspend fun updateProfile(uid: String, newName: String, newPhone: String): Result<AppUser> {
+        return try {
+            val ref = db.collection("users").document(uid)
+            ref.update(mapOf(
+                "name" to newName.trim(),
+                "phone" to newPhone.trim()
+            )).await()
+            refreshProfile()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun changePassword(currentPassword: String, newPassword: String): Result<Unit> {
+        val user = auth.currentUser ?: return Result.failure(AuthException(R.string.login_failed))
+        val email = user.email ?: return Result.failure(AuthException(R.string.login_failed))
+        return try {
+            val credential = com.google.firebase.auth.EmailAuthProvider.getCredential(email, currentPassword)
+            user.reauthenticate(credential).await()
+            user.updatePassword(newPassword).await()
+            Result.success(Unit)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val res = when (e) {
+                is FirebaseAuthInvalidCredentialsException -> R.string.login_failed
+                is FirebaseNetworkException -> R.string.network_error
+                else -> R.string.error_generic
+            }
+            Result.failure(AuthException(res, e.message))
+        }
+    }
+
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
+        return try {
+            auth.sendPasswordResetEmail(email.trim().lowercase()).await()
+            Result.success(Unit)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val res = when (e) {
+                is FirebaseNetworkException -> R.string.network_error
+                else -> R.string.error_generic
+            }
+            Result.failure(AuthException(res, e.message))
+        }
+    }
+
     /** Watch permissions while signed in, so deactivation or role changes take effect. */
     fun watchProfile(uid: String): Flow<AppUser?> =
         db.collection("users").document(uid).snapshotsFlow().map { snapshot ->

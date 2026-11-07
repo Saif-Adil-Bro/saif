@@ -342,4 +342,16 @@
     <string name="voice_permission_rationale">Microphone permission is required for continuous in-app voice recognition.</string>
     <string name="voice_grant_permission">Grant Permission</string>
     <string name="voice_fallback_intent">Use System Speech</string>
+    <string name="profile_title">My Profile</string>
+    <string name="edit_profile">Edit Profile</string>
+    <string name="change_password">Change Password</string>
+    <string name="current_password">Current Password</string>
+    <string name="new_password">New Password</string>
+    <string name="confirm_password">Confirm New Password</string>
+    <string name="passwords_mismatch">Passwords do not match</string>
+    <string name="password_changed_ok">Password updated successfully</string>
+    <string name="send_reset_link">Send Password Reset Link</string>
+    <string name="reset_email_sent">Password reset link has been sent to your email.</string>
+    <string name="profile_updated_ok">Profile updated successfully</string>
+    <string name="manage_members_btn">Manage Committee &amp; Members</string>
 </resources>

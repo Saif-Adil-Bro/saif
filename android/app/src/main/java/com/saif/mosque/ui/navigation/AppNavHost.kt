@@ -57,6 +57,7 @@ import com.saif.mosque.ui.screens.LoginScreen
 import com.saif.mosque.ui.screens.MembersScreen
 import com.saif.mosque.ui.screens.MoreScreen
 import com.saif.mosque.ui.screens.PlatformScreen
+import com.saif.mosque.ui.screens.ProfileScreen
 import com.saif.mosque.ui.screens.ReportsScreen
 import com.saif.mosque.ui.screens.StaffPayrollScreen
 import com.saif.mosque.ui.screens.ProjectsScreen
@@ -116,6 +117,7 @@ fun MosqueNavHost(container: AppContainer, isWideScreen: Boolean) {
                 composable(Screen.Payroll.route) { MosqueShell(nav, s.user, R.string.payroll_title) { StaffPayrollScreen(container, s.user) } }
                 composable(Screen.Projects.route) { MosqueShell(nav, s.user, R.string.projects_title) { ProjectsScreen(container, s.user) } }
                 composable(Screen.More.route) { MosqueShell(nav, s.user, R.string.more) { MoreScreen(nav, container, authVm, s.user) } }
+                composable(Screen.Profile.route) { MosqueShell(nav, s.user, R.string.profile_title) { ProfileScreen(nav, container, authVm, s.user) } }
             }
             }
         }
@@ -144,7 +146,7 @@ fun MosqueShell(
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val isSecondary = currentRoute in setOf(Screen.Donors.route, Screen.Subscriptions.route, Screen.Members.route,
-        Screen.Transfers.route, Screen.Reports.route, Screen.Payroll.route, Screen.Projects.route)
+        Screen.Transfers.route, Screen.Reports.route, Screen.Payroll.route, Screen.Projects.route, Screen.Profile.route)
     fun selected(item: NavItem) = currentRoute == item.screen.route ||
         (isSecondary && item.screen == Screen.More)
     fun navigate(item: NavItem) {
