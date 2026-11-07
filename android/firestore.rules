@@ -94,13 +94,6 @@ service cloud.firestore {
         (next.role != 'ADMIN' || platform() || me().role == 'ADMIN') &&
         (uid != request.auth.uid || (next.role == old.role && next.active == old.active));
     }
-    function selfProfileUpdate(uid) {
-      let old = resource.data;
-      let next = request.resource.data;
-      return uid == request.auth.uid &&
-        next.diff(old).affectedKeys().hasOnly(['name', 'phone']) &&
-        shortText(next.name, true) && shortText(next.get('phone', ''), false);
-    }
     function memberCounterDelete(mosqueId) {
       let next = request.resource.data;
       let target = /databases/$(database)/documents/users/$(next.memberOpId);
@@ -492,7 +485,7 @@ service cloud.firestore {
       // constrain mosqueId and cannot read profiles from a different tenant.
       allow read: if signedIn() && (request.auth.uid == uid || platform() || activeTenant(resource.data.mosqueId));
       allow create: if inviteProfileCreate(uid) || platformAdminCreate(uid);
-      allow update: if signedIn() && (memberUpdate(uid) || selfProfileUpdate(uid));
+      allow update: if signedIn() && memberUpdate(uid);
       allow delete: if signedIn() && memberDelete(uid);
     }
     match /mosques/{mosqueId} {

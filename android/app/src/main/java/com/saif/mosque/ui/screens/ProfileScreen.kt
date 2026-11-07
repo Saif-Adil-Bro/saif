@@ -1,13 +1,16 @@
 package com.saif.mosque.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Divider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
@@ -61,6 +65,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -115,7 +120,7 @@ fun ProfileScreen(
     val canManageMembers = activeUser.role in setOf(Role.ADMIN, Role.PRESIDENT, Role.SECRETARY, Role.SUPERADMIN)
 
     Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         LazyColumn(
@@ -133,7 +138,7 @@ fun ProfileScreen(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
                     ),
-                    border = androidx.compose.foundation.BorderStroke(
+                    border = BorderStroke(
                         1.dp,
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
                     )
@@ -240,7 +245,7 @@ fun ProfileScreen(
                             onClick = { showEditProfileDialog = true }
                         )
 
-                        androidx.compose.material3.Divider(
+                        Divider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
@@ -252,7 +257,7 @@ fun ProfileScreen(
                             onClick = { showChangePasswordDialog = true }
                         )
 
-                        androidx.compose.material3.Divider(
+                        Divider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
@@ -471,7 +476,7 @@ private fun ProfileSettingActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .androidx.compose.foundation.clickable(onClick = onClick)
+            .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -554,7 +559,7 @@ private fun EditProfileDialog(
                     value = phone,
                     onValueChange = { phone = it },
                     error = if (attempted && phone.isNotBlank()) Validators.bdPhone(phone) else null,
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone,
+                    keyboardType = KeyboardType.Phone,
                     enabled = !isSaving
                 )
             }
