@@ -358,15 +358,17 @@ fun MembersScreen(
                         }
                     } else {
                         items(members, key = { it.id }) { m ->
-                        val canManageTarget = canEdit && m.role != Role.SUPERADMIN &&
-                            (m.role != Role.ADMIN || user.role == Role.ADMIN || user.role == Role.SUPERADMIN)
-                        com.saif.mosque.ui.components.RecordCard(
-                            title = m.name + if (m.id == user.id) " · ${stringResource(R.string.you)}" else "",
-                            supporting = listOf(m.email, roleLabel(m.role), m.designation)
-                                .filter { it.isNotBlank() }.joinToString(" · "),
-                            status = if (!m.active) stringResource(R.string.inactive) else null,
-                            onEdit = if (canManageTarget) ({ editing = m }) else null,
-                            onDelete = if (canManageTarget && m.id != user.id) ({ deleting = m }) else null)
+                            val canManageTarget = canEdit && m.role != Role.SUPERADMIN &&
+                                (m.role != Role.ADMIN || user.role == Role.ADMIN || user.role == Role.SUPERADMIN)
+                            com.saif.mosque.ui.components.RecordCard(
+                                title = m.name + if (m.id == user.id) " · ${stringResource(R.string.you)}" else "",
+                                supporting = listOf(m.email, roleLabel(m.role), m.designation)
+                                    .filter { it.isNotBlank() }.joinToString(" · "),
+                                status = if (!m.active) stringResource(R.string.inactive) else null,
+                                onEdit = if (canManageTarget) ({ editing = m }) else null,
+                                onDelete = if (canManageTarget && m.id != user.id) ({ deleting = m }) else null
+                            )
+                        }
                     }
                 }
             }
