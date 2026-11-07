@@ -193,10 +193,10 @@ fun DashboardScreen(container: AppContainer, user: AppUser) {
 
             item {
                 com.saif.mosque.ui.components.StatsGrid(listOf(
+                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.today_collection), Format.money(data.todayIncome)),
+                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.today_expense), Format.money(data.todayExpense), MaterialTheme.colorScheme.error),
                     com.saif.mosque.ui.components.StatItem(stringResource(R.string.monthly_income), Format.money(data.monthlyIncome)),
-                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.monthly_expense), Format.money(data.monthlyExpense), MaterialTheme.colorScheme.error),
-                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.active_donors), Format.bn(data.activeDonors)),
-                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.fund_count), Format.bn(data.fundCount))
+                    com.saif.mosque.ui.components.StatItem(stringResource(R.string.monthly_expense), Format.money(data.monthlyExpense), MaterialTheme.colorScheme.error)
                 ))
             }
 

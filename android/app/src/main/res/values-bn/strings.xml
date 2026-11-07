@@ -324,4 +324,18 @@
     <string name="reset_email_sent">পাসওয়ার্ড রিসেটের লিঙ্ক আপনার ইমেইলে পাঠানো হয়েছে।</string>
     <string name="profile_updated_ok">প্রোফাইল সফলভাবে আপডেট হয়েছে</string>
     <string name="manage_members_btn">কমিটি ও সদস্য ব্যবস্থাপনা</string>
+    <string name="daily_tab">দৈনিক</string>
+    <string name="weekly_tab">সাপ্তাহিক</string>
+    <string name="monthly_tab">মাসিক</string>
+    <string name="opening_balance">প্রারম্ভিক স্থিতি</string>
+    <string name="closing_balance">সমাপনী স্থিতি</string>
+    <string name="net_balance">নিট পরিবর্তন</string>
+    <string name="transfers_of_period">তহবিল স্থানান্তর</string>
+    <string name="daily_report_title">দৈনিক আয়-ব্যয় হিসাব</string>
+    <string name="weekly_report_title">সাপ্তাহিক হিসাব বিবরণী</string>
+    <string name="monthly_report_title">মাসিক অডিট রিপোর্ট</string>
+    <string name="today_collection">আজকের আদায়</string>
+    <string name="today_expense">আজকের ব্যয়</string>
+    <string name="pick_date">তারিখ নির্বাচন</string>
+    <string name="no_transfers">এই সময়ে কোনো তহবিল স্থানান্তর নেই</string>
 </resources>

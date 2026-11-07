@@ -20,7 +20,11 @@ object AuditReportPdfExporter {
         totalExpense: Double,
         fundBalances: List<Pair<Fund, Double>>,
         contributions: List<Contribution>,
-        expenses: List<Expense>
+        expenses: List<Expense>,
+        transfers: List<com.saif.mosque.data.model.Transfer> = emptyList(),
+        openingBalance: Double? = null,
+        closingBalance: Double? = null,
+        reportTitle: String = "আয়-ব্যয় অডিট রিপোর্ট ও সাধারণ সভা (AGM) বিবরণী"
     ) {
         val netBalance = totalIncome - totalExpense
         val cleanMosqueName = mosque?.name?.ifBlank { "বায়তুল আমান জামে মসজিদ" } ?: "বায়তুল আমান জামে মসজিদ"
@@ -32,12 +36,16 @@ object AuditReportPdfExporter {
             mosqueLocation = mosqueLocation,
             registrationNo = mosque?.registrationNo ?: "",
             periodLabel = periodLabel,
+            reportTitle = reportTitle,
             totalIncome = totalIncome,
             totalExpense = totalExpense,
             netBalance = netBalance,
             fundBalances = fundBalances,
             contributions = contributions,
-            expenses = expenses
+            expenses = expenses,
+            transfers = transfers,
+            openingBalance = openingBalance,
+            closingBalance = closingBalance
         )
 
         val webView = WebView(context)
@@ -65,12 +73,16 @@ object AuditReportPdfExporter {
         mosqueLocation: String,
         registrationNo: String,
         periodLabel: String,
+        reportTitle: String,
         totalIncome: Double,
         totalExpense: Double,
         netBalance: Double,
         fundBalances: List<Pair<Fund, Double>>,
         contributions: List<Contribution>,
-        expenses: List<Expense>
+        expenses: List<Expense>,
+        transfers: List<com.saif.mosque.data.model.Transfer>,
+        openingBalance: Double?,
+        closingBalance: Double?
     ): String {
         val sb = StringBuilder()
         sb.append("""
@@ -78,7 +90,7 @@ object AuditReportPdfExporter {
             <html lang="bn">
             <head>
                 <meta charset="utf-8">
-                <title>মাসিক ও বার্ষিক আয়-ব্যয় অডিট রিপোর্ট</title>
+                <title>$reportTitle</title>
                 <style>
                     @page { size: A4 portrait; margin: 12mm 12mm; }
                     body {
@@ -171,10 +183,16 @@ object AuditReportPdfExporter {
                 </div>
 
                 <div class="report-title">
-                    আয়-ব্যয় অডিট রিপোর্ট ও সাধারণ সভা (AGM) বিবরণী — $periodLabel
+                    $reportTitle — $periodLabel
                 </div>
 
                 <div class="summary-grid">
+                    ${if (openingBalance != null) """
+                    <div class="summary-card">
+                        <div class="label">প্রারম্ভিক স্থিতি</div>
+                        <div class="value">${Format.money(openingBalance)}</div>
+                    </div>
+                    """ else ""}
                     <div class="summary-card">
                         <div class="label">মোট আদায়কৃত আয়</div>
                         <div class="value income-val">${Format.money(totalIncome)}</div>
@@ -184,9 +202,15 @@ object AuditReportPdfExporter {
                         <div class="value expense-val">${Format.money(totalExpense)}</div>
                     </div>
                     <div class="summary-card">
-                        <div class="label">নিট উদ্বৃত্ত / (ঘাটতি)</div>
+                        <div class="label">নিট পরিবর্তন</div>
                         <div class="value net-val">${Format.money(netBalance)}</div>
                     </div>
+                    ${if (closingBalance != null) """
+                    <div class="summary-card">
+                        <div class="label">সমাপনী স্থিতি</div>
+                        <div class="value">${Format.money(closingBalance)}</div>
+                    </div>
+                    """ else ""}
                 </div>
 
                 <div class="section-title">তহবিল স্থিতি (Fund Balances)</div>
@@ -195,7 +219,7 @@ object AuditReportPdfExporter {
                         <tr>
                             <th style="width: 15%;">কোড</th>
                             <th style="width: 50%;">তহবিলের নাম</th>
-                            <th class="num" style="width: 35%;">বর্তমান স্থিতি</th>
+                            <th class="num" style="width: 35%;">স্থিতি</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -215,6 +239,43 @@ object AuditReportPdfExporter {
                     </tbody>
                 </table>
         """.trimIndent())
+
+        if (transfers.isNotEmpty()) {
+            val fundMap = fundBalances.associate { it.first.id to "${it.first.code} ${it.first.name}" }
+            sb.append("""
+                <div class="section-title">আন্তঃতহবিল স্থানান্তর (${Format.bn(transfers.size)} টি)</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 15%;">তারিখ</th>
+                            <th style="width: 25%;">উৎস তহবিল</th>
+                            <th style="width: 25%;">গন্তব্য তহবিল</th>
+                            <th style="width: 20%;">বিবরণ</th>
+                            <th class="num" style="width: 15%;">পরিমাণ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            """.trimIndent())
+
+            transfers.take(20).forEach { t ->
+                val fromName = fundMap[t.fromAccountId] ?: t.fromAccountId
+                val toName = fundMap[t.toAccountId] ?: t.toAccountId
+                sb.append("""
+                    <tr>
+                        <td>${Format.date(t.date)}</td>
+                        <td>$fromName</td>
+                        <td>$toName</td>
+                        <td>${t.note.ifBlank { "—" }}</td>
+                        <td class="num">${Format.money(t.amount)}</td>
+                    </tr>
+                """.trimIndent())
+            }
+
+            sb.append("""
+                    </tbody>
+                </table>
+            """.trimIndent())
+        }
 
         if (expenses.isNotEmpty()) {
             sb.append("""

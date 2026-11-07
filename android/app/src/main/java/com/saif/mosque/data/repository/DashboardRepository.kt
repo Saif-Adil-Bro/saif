@@ -83,17 +83,23 @@ class DashboardRepository(
                 }
                 ).sortedWith(compareByDescending<RecentTx> { it.date }.thenByDescending { it.createdAt }).take(10)
 
-            val weeklyIncome = weeklyContributions.sumOf { Math.round(it.amount * 100) } / 100.0
-            val weeklyExpense = weeklyExpenses.sumOf { Math.round(it.amount * 100) } / 100.0
+            val weeklyIncome = weeklyContributions.sumOf { Math.round(it.amount * 100L) } / 100.0
+            val weeklyExpense = weeklyExpenses.sumOf { Math.round(it.amount * 100L) } / 100.0
+
+            val todayIso = Format.todayIso()
+            val todayIncome = contributions.filter { it.date == todayIso }.sumOf { Math.round(it.amount * 100L) } / 100.0
+            val todayExpense = expenses.filter { it.date == todayIso }.sumOf { Math.round(it.amount * 100L) } / 100.0
 
             DashboardData(
-                totalBalance = mosque?.totalBalance ?: (funds.sumOf { Math.round(it.balance * 100) } / 100.0),
-                monthlyIncome = contributions.sumOf { Math.round(it.amount * 100) } / 100.0,
-                monthlyExpense = expenses.sumOf { Math.round(it.amount * 100) } / 100.0,
+                totalBalance = mosque?.totalBalance ?: (funds.sumOf { Math.round(it.balance * 100L) } / 100.0),
+                monthlyIncome = contributions.sumOf { Math.round(it.amount * 100L) } / 100.0,
+                monthlyExpense = expenses.sumOf { Math.round(it.amount * 100L) } / 100.0,
                 weeklyIncome = weeklyIncome,
                 weeklyExpense = weeklyExpense,
                 weeklyStartDate = weekStart,
                 weeklyEndDate = weekEnd,
+                todayIncome = todayIncome,
+                todayExpense = todayExpense,
                 activeDonors = donors.count { it.active },
                 fundCount = funds.count { it.active },
                 fundBalances = funds.sortedByDescending { it.balance }.map { it to it.balance },

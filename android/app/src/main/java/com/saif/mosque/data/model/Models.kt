@@ -119,6 +119,8 @@ data class DashboardData(
     val weeklyExpense: Double = 0.0,
     val weeklyStartDate: String = "",
     val weeklyEndDate: String = "",
+    val todayIncome: Double = 0.0,
+    val todayExpense: Double = 0.0,
     val activeDonors: Int = 0,
     val fundCount: Int = 0,
     val fundBalances: List<Pair<Fund, Double>> = emptyList(),
@@ -142,7 +144,31 @@ data class MonthlyReport(
     val expense: Double,
     val byFund: List<Pair<String, Double>>,
     val contributions: List<Contribution>,
-    val expenses: List<Expense>
+    val expenses: List<Expense>,
+    val transfers: List<Transfer> = emptyList(),
+    val openingBalance: Double = 0.0,
+    val closingBalance: Double = 0.0
+)
+
+data class DailyReport(
+    val dateIso: String,
+    val income: Double,
+    val expense: Double,
+    val netChange: Double,
+    val contributions: List<Contribution> = emptyList(),
+    val expenses: List<Expense> = emptyList(),
+    val transfers: List<Transfer> = emptyList()
+)
+
+data class WeeklyReport(
+    val startDate: String,
+    val endDate: String,
+    val income: Double,
+    val expense: Double,
+    val netChange: Double,
+    val contributions: List<Contribution> = emptyList(),
+    val expenses: List<Expense> = emptyList(),
+    val transfers: List<Transfer> = emptyList()
 )
 
 /** Result of atomic mosque provisioning (spec 1.5–1.9): one-time credentials. */

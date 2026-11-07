@@ -75,14 +75,30 @@ object Format {
     }
 
     /** Last 7 days ISO date range as Pair(startDate, endDate) inclusive. */
-    fun last7DaysIso(): Pair<String, String> {
-        val today = LocalDate.now()
-        val start = today.minusDays(6)
+    fun last7DaysIso(): Pair<String, String> = weekRangeIso(LocalDate.now())
+
+    /** 7 days ISO date range anchored on a specific end date. */
+    fun weekRangeIso(anchor: LocalDate): Pair<String, String> {
+        val start = anchor.minusDays(6)
         return start.format(DateTimeFormatter.ISO_LOCAL_DATE) to
-            today.format(DateTimeFormatter.ISO_LOCAL_DATE)
+            anchor.format(DateTimeFormatter.ISO_LOCAL_DATE)
     }
 
     /** Formats date range in Bengali: "dd/MM/yyyy হতে dd/MM/yyyy পর্যন্ত" */
     fun dateRangeBengali(startIso: String, endIso: String): String =
         "${date(startIso)} হতে ${date(endIso)} পর্যন্ত"
+
+    /** Bengali Day of week name: "শুক্রবার", "শনিবার", ইত্যাদি */
+    fun dayOfWeekBengali(dateIso: String): String = try {
+        val d = LocalDate.parse(dateIso)
+        when (d.dayOfWeek) {
+            java.time.DayOfWeek.FRIDAY -> "শুক্রবার"
+            java.time.DayOfWeek.SATURDAY -> "শনিবার"
+            java.time.DayOfWeek.SUNDAY -> "রবিবার"
+            java.time.DayOfWeek.MONDAY -> "সোমবার"
+            java.time.DayOfWeek.TUESDAY -> "মঙ্গলবার"
+            java.time.DayOfWeek.WEDNESDAY -> "বুধবার"
+            java.time.DayOfWeek.THURSDAY -> "বৃহস্পতিবার"
+        }
+    } catch (_: Exception) { "" }
 }

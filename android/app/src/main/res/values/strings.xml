@@ -354,4 +354,18 @@
     <string name="reset_email_sent">Password reset link has been sent to your email.</string>
     <string name="profile_updated_ok">Profile updated successfully</string>
     <string name="manage_members_btn">Manage Committee &amp; Members</string>
+    <string name="daily_tab">Daily</string>
+    <string name="weekly_tab">Weekly</string>
+    <string name="monthly_tab">Monthly</string>
+    <string name="opening_balance">Opening Balance</string>
+    <string name="closing_balance">Closing Balance</string>
+    <string name="net_balance">Net Balance</string>
+    <string name="transfers_of_period">Transfers</string>
+    <string name="daily_report_title">Daily Financial Report</string>
+    <string name="weekly_report_title">Weekly Financial Report</string>
+    <string name="monthly_report_title">Monthly Audit Report</string>
+    <string name="today_collection">Today\'s Collection</string>
+    <string name="today_expense">Today\'s Expense</string>
+    <string name="pick_date">Pick Date</string>
+    <string name="no_transfers">No transfers in this period</string>
 </resources>

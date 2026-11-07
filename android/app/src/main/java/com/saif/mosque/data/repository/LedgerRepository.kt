@@ -455,6 +455,34 @@ class LedgerRepository(
             .whereGreaterThanOrEqualTo("date", startIso)
             .whereLessThanOrEqualTo("date", endIso)
             .get().await().visibleLedgerRecords(Expense::class.java)
+
+    suspend fun transfersInRange(mosqueId: String, startIso: String, endIso: String): List<Transfer> =
+        coll(mosqueId, "transfers")
+            .whereGreaterThanOrEqualTo("date", startIso)
+            .whereLessThanOrEqualTo("date", endIso)
+            .get().await().visibleLedgerRecords(Transfer::class.java)
+
+    suspend fun contributionsAfter(mosqueId: String, endIso: String): List<Contribution> =
+        coll(mosqueId, "contributions")
+            .whereGreaterThan("date", endIso)
+            .get().await().visibleLedgerRecords(Contribution::class.java)
+
+    suspend fun expensesAfter(mosqueId: String, endIso: String): List<Expense> =
+        coll(mosqueId, "expenses")
+            .whereGreaterThan("date", endIso)
+            .get().await().visibleLedgerRecords(Expense::class.java)
+
+    suspend fun getTotalBalancePoisha(mosqueId: String): Long {
+        return try {
+            val mosqueSnap = mosqueRef(mosqueId).get().await()
+            mosqueSnap.getLong("totalBalancePoisha")
+                ?: Math.round((mosqueSnap.getDouble("totalBalance") ?: 0.0) * 100L)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            0L
+        }
+    }
 }
 
 class InsufficientBalanceException : Exception("insufficient balance")
